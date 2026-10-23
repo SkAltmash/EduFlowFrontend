@@ -61,8 +61,8 @@ export default function RegisterPage() {
 
   return (
     <AuthShell
-      title="Create your account"
-      subtitle="Set up your institute. You'll be its owner."
+      title="Start your 7-day free trial"
+      subtitle="Every feature included. No credit card needed."
       footer={
         <>
           Already have an account?{" "}
@@ -115,7 +115,7 @@ export default function RegisterPage() {
           />
         </Field>
         <Button type="submit" className="w-full" loading={pending}>
-          Create account
+          Start free trial
         </Button>
       </form>
     </AuthShell>

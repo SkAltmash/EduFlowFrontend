@@ -7,9 +7,11 @@
   --foreground: #18181b;
   --muted: #6b6b73;
   --border: #e4e4e0;
-  --accent: #4338ca;
-  --accent-hover: #3730a3;
-  --accent-soft: #eef0ff;
+  /* Brand: EduFlow navy (#2b3a8c) and green (#0b8a5f) */
+  --accent: #2b3a8c;
+  --accent-hover: #222e70;
+  --accent-soft: #eceef8;
+  --brand-green: #0b8a5f;
   --accent-foreground: #ffffff;
   --success: #15803d;
   --success-soft: #e9f7ee;
@@ -30,9 +32,10 @@
     --foreground: #ececef;
     --muted: #9a9aa5;
     --border: #2a2a32;
-    --accent: #818cf8;
-    --accent-hover: #a5b4fc;
-    --accent-soft: #1e1f3a;
+    --accent: #8f9be8;
+    --accent-hover: #aab3ef;
+    --accent-soft: #1a1f3d;
+    --brand-green: #3ddc97;
     --accent-foreground: #0c0c0f;
     --success: #4ade80;
     --success-soft: #0f2a1a;
@@ -52,9 +55,10 @@
   --foreground: #ececef;
   --muted: #9a9aa5;
   --border: #2a2a32;
-  --accent: #818cf8;
-  --accent-hover: #a5b4fc;
-  --accent-soft: #1e1f3a;
+  --accent: #8f9be8;
+  --accent-hover: #aab3ef;
+  --accent-soft: #1a1f3d;
+  --brand-green: #3ddc97;
   --accent-foreground: #0c0c0f;
   --success: #4ade80;
   --success-soft: #0f2a1a;
@@ -77,6 +81,7 @@
   --color-accent-hover: var(--accent-hover);
   --color-accent-soft: var(--accent-soft);
   --color-accent-foreground: var(--accent-foreground);
+  --color-brand-green: var(--brand-green);
   --color-success: var(--success);
   --color-success-soft: var(--success-soft);
   --color-danger: var(--danger);
@@ -125,4 +130,23 @@ body {
   @page {
     margin: 12mm;
   }
+}
+
+/* Logo artwork: the light-theme file by default, the dark-theme file when dark is active */
+.logo-dark {
+  display: none;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .logo-light {
+    display: none;
+  }
+  :root:not([data-theme="light"]) .logo-dark {
+    display: block;
+  }
+}
+:root[data-theme="dark"] .logo-light {
+  display: none;
+}
+:root[data-theme="dark"] .logo-dark {
+  display: block;
 }

@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from "react";
 
@@ -5,16 +6,13 @@ export function cx(...classes: (string | false | null | undefined)[]) {
   return classes.filter(Boolean).join(" ");
 }
 
-export function Logo({ href = "/" }: { href?: string }) {
+/** The EduFlow wordmark (book + name); swaps to the light-on-dark artwork in dark mode. */
+export function Logo({ href = "/", size = "md" }: { href?: string; size?: "sm" | "md" | "lg" }) {
+  const h = size === "sm" ? "h-6" : size === "lg" ? "h-9" : "h-7";
   return (
-    <Link href={href} className="inline-flex items-center gap-2 font-semibold tracking-tight">
-      <span className="grid size-8 place-items-center rounded-lg bg-accent text-accent-foreground">
-        <svg viewBox="0 0 24 24" className="size-4.5" fill="none" stroke="currentColor" strokeWidth={2.2}>
-          <path d="M3 9l9-5 9 5-9 5-9-5z" strokeLinejoin="round" />
-          <path d="M7 11.5V16c0 1.5 2.2 3 5 3s5-1.5 5-3v-4.5" strokeLinecap="round" />
-        </svg>
-      </span>
-      <span className="text-lg">EduFlow</span>
+    <Link href={href} aria-label="EduFlow home" className="inline-flex shrink-0 items-center">
+      <Image src="/images/brand/wordmark-light.png" alt="EduFlow" width={541} height={96} priority className={cx("logo-light w-auto", h)} />
+      <Image src="/images/brand/wordmark-dark.png" alt="" aria-hidden width={534} height={96} priority className={cx("logo-dark w-auto", h)} />
     </Link>
   );
 }
