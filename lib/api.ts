@@ -2,7 +2,12 @@
 // The access token lives in memory only; the refresh token is an HttpOnly cookie
 // set by the API on /api/auth, so every auth call must use credentials: "include".
 
-export const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000").replace(/\/$/, "");
+// NEXT_PUBLIC_API_URL wins when set. Otherwise production builds use the live API
+// and `next dev` uses a local backend, so local testing never touches real data.
+export const API_URL = (
+  process.env.NEXT_PUBLIC_API_URL ??
+  (process.env.NODE_ENV === "production" ? "https://eduflowbackend-1.onrender.com" : "http://localhost:5000")
+).replace(/\/$/, "");
 
 export type Role = "owner" | "admin" | "teacher" | "accountant";
 export const ROLES: Role[] = ["owner", "admin", "teacher", "accountant"];
