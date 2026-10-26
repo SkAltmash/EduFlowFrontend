@@ -111,7 +111,7 @@ export default function LoginPage() {
         <>
           New to EduFlow?{" "}
           <Link href="/register" className="font-medium text-accent hover:underline">
-            Start a 17-day free trial
+            Start a 7-day free trial
           </Link>
         </>
       }

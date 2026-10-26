@@ -4,10 +4,7 @@
 
 // NEXT_PUBLIC_API_URL wins when set. Otherwise production builds use the live API
 // and `next dev` uses a local backend, so local testing never touches real data.
-export const API_URL = (
-  process.env.NEXT_PUBLIC_API_URL ??
-  (process.env.NODE_ENV === "production" ? "https://eduflowbackend-1.onrender.com" : "http://localhost:5000")
-).replace(/\/$/, "");
+export const API_URL = "https://eduflowbackend-1.onrender.com/"
 
 export type Role = "owner" | "admin" | "teacher" | "accountant";
 export const ROLES: Role[] = ["owner", "admin", "teacher", "accountant"];
