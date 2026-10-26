@@ -24,6 +24,13 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [{ source: "/app", destination: "/app/students", permanent: false }];
   },
+  // Same-origin API: with BACKEND_URL set (and NEXT_PUBLIC_API_URL unset), the browser
+  // calls /api/* on this site and it's forwarded to the backend. The login cookie then
+  // belongs to this site, so phones (Safari, Brave) that block third-party cookies keep you signed in.
+  async rewrites() {
+    const backend = (process.env.BACKEND_URL ?? "").trim().replace(/\/+$/, "");
+    return backend ? [{ source: "/api/:path*", destination: `${backend}/api/:path*` }] : [];
+  },
 };
 
 export default nextConfig;
