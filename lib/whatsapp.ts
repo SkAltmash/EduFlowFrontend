@@ -1,13 +1,14 @@
 // WhatsApp messaging to parents. Messages are always built by the server from
 // its own records; the browser only chooses who to message.
 
-export type MessageType = "fee_receipt" | "fee_reminder" | "absence" | "attendance_summary";
+export type MessageType = "fee_receipt" | "fee_reminder" | "absence" | "attendance_summary" | "exam_result" | "progress_report";
 
 export type MessageRef =
   | { paymentId: string }
   | { studentId: string }
   | { studentId: string; date: string }
-  | { studentId: string; month: string };
+  | { studentId: string; month: string }
+  | { examId: string; studentId: string };
 
 export interface LastSent {
   status: "opened" | "sent" | "delivered" | "read" | "failed";
@@ -71,7 +72,18 @@ export const TYPE_LABEL: Record<MessageType, string> = {
   fee_reminder: "Fee reminder",
   absence: "Absence alert",
   attendance_summary: "Attendance report",
+  exam_result: "Test result",
+  progress_report: "Progress report",
 };
+
+/** Must match how the server keys each message (see buildRecipients in the API). */
+export function refKeyOf(type: MessageType, ref: MessageRef) {
+  if ("paymentId" in ref) return ref.paymentId;
+  if ("examId" in ref) return `${ref.examId}:${ref.studentId}`;
+  if ("date" in ref) return `${ref.studentId}:${ref.date}`;
+  if ("month" in ref) return type === "progress_report" ? `progress:${ref.studentId}:${ref.month}` : `${ref.studentId}:${ref.month}`;
+  return ref.studentId;
+}
 
 export const STATUS_LABEL: Record<LastSent["status"], string> = {
   opened: "Opened in WhatsApp",

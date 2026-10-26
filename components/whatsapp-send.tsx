@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import { localToday } from "@/lib/attendance";
 import {
   STATUS_LABEL,
+  refKeyOf,
   recentlySent,
   timeAgo,
   type LastSent,
@@ -121,7 +122,7 @@ export function WhatsAppDrawer({
     setSending(true);
     setError(null);
     try {
-      const refsToSend = refs.filter((ref) => queue.some((q) => q.refKey === refKeyOf(ref)));
+      const refsToSend = refs.filter((ref) => queue.some((q) => q.refKey === refKeyOf(type, ref)));
       setResult(await api<SendResult>("/api/whatsapp/send", { method: "POST", body: { type, refs: refsToSend, today: localToday() } }));
       prepared.reload();
     } catch (err) {
@@ -269,12 +270,6 @@ export function WhatsAppDrawer({
   );
 }
 
-function refKeyOf(ref: MessageRef) {
-  if ("paymentId" in ref) return ref.paymentId;
-  if ("date" in ref) return `${ref.studentId}:${ref.date}`;
-  if ("month" in ref) return `${ref.studentId}:${ref.month}`;
-  return ref.studentId;
-}
 
 /** WhatsApp-style bubble: *bold* rendered bold, line breaks kept. */
 export function MessageBubble({ text, className }: { text: string; className?: string }) {

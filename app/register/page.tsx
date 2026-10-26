@@ -19,7 +19,7 @@ export default function RegisterPage() {
   const [pending, setPending] = useState(false);
 
   useEffect(() => {
-    if (session.status === "authenticated") router.replace(session.isSuperAdmin ? "/console" : "/app");
+    if (session.status === "authenticated") router.replace(session.isSuperAdmin ? "/console" : "/app/students");
   }, [session, router]);
 
   const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>

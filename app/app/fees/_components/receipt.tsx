@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, type Ref } from "react";
-import { createPortal } from "react-dom";
+import { PrintPortal, ShareImageButton } from "@/components/share";
 import { WhatsAppButton, WhatsAppDrawer } from "@/components/whatsapp-send";
 import { Drawer, errorMessage, formatDate, useResource } from "@/components/data";
 import { Alert, Button, Field, Icon, Input, Spinner } from "@/components/ui";
@@ -115,11 +115,10 @@ export function ReceiptDocument({ receipt, ref }: { receipt: Receipt; ref?: Ref<
 
 /** Opens the print dialog for a receipt; only the receipt is printed. */
 export function PrintableReceipt({ receipt }: { receipt: Receipt }) {
-  return createPortal(
-    <div id="print-area" className="hidden">
+  return (
+    <PrintPortal>
       <ReceiptDocument receipt={receipt} />
-    </div>,
-    document.body
+    </PrintPortal>
   );
 }
 
@@ -219,63 +218,18 @@ export function ReceiptDrawer({
   );
 }
 
-/** PNG of the on-screen receipt: shared through the phone's share sheet (WhatsApp, etc.), or downloaded. */
-async function shareReceiptImage(node: HTMLElement, receipt: Receipt) {
-  const { toBlob } = await import("html-to-image");
-  // 2x for a crisp image; white background so it never comes out transparent
-  const blob = await toBlob(node, { pixelRatio: 2, backgroundColor: "#ffffff", cacheBust: true });
-  if (!blob) throw new Error("Couldn't create the image");
-  const file = new File([blob], `receipt-${receipt.payment.receiptNo}.png`, { type: "image/png" });
-  const text = `Fee receipt ${receipt.payment.receiptNo} — ${receipt.payment.student.fullName}`;
-  if (navigator.canShare?.({ files: [file] })) {
-    try {
-      await navigator.share({ files: [file], title: text, text });
-      return "shared";
-    } catch (err) {
-      if ((err as Error).name === "AbortError") return "cancelled";
-      throw err;
-    }
-  }
-  const url = URL.createObjectURL(file);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = file.name;
-  a.click();
-  URL.revokeObjectURL(url);
-  return "downloaded";
-}
-
 /** "WhatsApp" + "Share image" for a receipt. Pass the receipt document's element for the image. */
 export function ReceiptShare({ receipt, docRef }: { receipt: Receipt; docRef: React.RefObject<HTMLDivElement | null> }) {
   const [whatsapp, setWhatsapp] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
-
-  async function shareImage() {
-    if (!docRef.current) return;
-    setBusy(true);
-    setNote(null);
-    try {
-      const outcome = await shareReceiptImage(docRef.current, receipt);
-      if (outcome === "downloaded") setNote("Image downloaded. Attach it in WhatsApp Web or any chat.");
-    } catch (err) {
-      setNote(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   if (receipt.payment.voided) return null;
   return (
-    <div className="space-y-2">
-      <div className="grid grid-cols-2 gap-2">
-        <WhatsAppButton onClick={() => setWhatsapp(true)}>Send on WhatsApp</WhatsAppButton>
-        <Button variant="secondary" onClick={shareImage} loading={busy}>
-          <Icon d="M4 12v7a1 1 0 001 1h14a1 1 0 001-1v-7M16 6l-4-4-4 4M12 2v13" />
-          Share image
-        </Button>
-      </div>
-      {note && <p className="text-xs text-muted">{note}</p>}
+    <div className="grid grid-cols-2 gap-2">
+      <WhatsAppButton onClick={() => setWhatsapp(true)}>Send on WhatsApp</WhatsAppButton>
+      <ShareImageButton
+        nodeRef={docRef}
+        fileName={`receipt-${receipt.payment.receiptNo}`}
+        title={`Fee receipt ${receipt.payment.receiptNo} — ${receipt.payment.student.fullName}`}
+      />
       {whatsapp && (
         <WhatsAppDrawer
           type="fee_receipt"

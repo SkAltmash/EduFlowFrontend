@@ -11,6 +11,7 @@ import { useAuth } from "@/lib/auth";
 const NAV: { href: string; label: string; icon: string; roles?: string[] }[] = [
   { href: "/app/students", label: "Students", icon: ICONS.users },
   { href: "/app/attendance", label: "Attendance", icon: ICONS.calendarCheck },
+  { href: "/app/exams", label: "Tests", icon: "M9 4h6M8 4H6v16h12V4h-2M9 10h6M9 14h6M9 18h3", roles: ["owner", "admin", "teacher"] },
   // Teachers don't handle money
   { href: "/app/fees", label: "Fees", icon: "M7 4h10M7 8h10M7 4c4 0 6 2 6 4s-2 4-6 4l7 8", roles: ["owner", "admin", "accountant"] },
   {
@@ -75,7 +76,7 @@ export default function AppLayout({ children }: LayoutProps<"/app">) {
       <header className="sticky top-0 z-40 border-b border-border bg-background/85 backdrop-blur md:hidden">
         <div className="flex h-14 items-center justify-between gap-3 px-4">
           <div className="flex min-w-0 items-center gap-3">
-            <Logo href="/app" />
+            <Logo href="/app/students" />
             <span className="truncate border-l border-border pl-3 text-sm text-muted">{session.tenant.name}</span>
           </div>
           <button
@@ -109,7 +110,7 @@ export default function AppLayout({ children }: LayoutProps<"/app">) {
       {/* Desktop sidebar */}
       <aside className="hidden border-r border-border bg-surface md:sticky md:top-0 md:flex md:h-dvh md:w-60 md:flex-col">
         <div className="px-5 py-4">
-          <Logo href="/app" />
+          <Logo href="/app/students" />
         </div>
         <div className="mx-3 mb-3 rounded-lg bg-surface-muted px-3 py-2.5">
           <p className="truncate text-sm font-medium">{session.tenant.name}</p>

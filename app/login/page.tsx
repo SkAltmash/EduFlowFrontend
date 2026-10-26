@@ -22,7 +22,7 @@ export default function LoginPage() {
 
   // Already signed in: go where this account belongs
   useEffect(() => {
-    if (session.status === "authenticated") router.replace(session.isSuperAdmin ? "/console" : "/app");
+    if (session.status === "authenticated") router.replace(session.isSuperAdmin ? "/console" : "/app/students");
   }, [session, router]);
 
   function showError(err: unknown) {
