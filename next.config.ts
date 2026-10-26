@@ -20,9 +20,9 @@ const nextConfig: NextConfig = {
       },
     },
   },
-  // "/app" has no page of its own; send it straight to the first section
+  // "/app" has no page of its own; the dashboard is home
   async redirects() {
-    return [{ source: "/app", destination: "/app/students", permanent: false }];
+    return [{ source: "/app", destination: "/app/dashboard", permanent: false }];
   },
   // Same-origin API: with BACKEND_URL set (and NEXT_PUBLIC_API_URL unset), the browser
   // calls /api/* on this site and it's forwarded to the backend. The login cookie then

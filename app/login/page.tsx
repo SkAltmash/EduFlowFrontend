@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { AuthShell, fieldErrors } from "@/components/auth-shell";
-import { Alert, Badge, Button, Field, Input, Spinner } from "@/components/ui";
+import { AUTH_ICONS, AuthField, AuthInput, AuthShell, PasswordInput, fieldErrors } from "@/components/auth-shell";
+import { Alert, Badge, Button, Spinner } from "@/components/ui";
 import { ApiError, type TenantChoice } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
@@ -22,7 +22,7 @@ export default function LoginPage() {
 
   // Already signed in: go where this account belongs
   useEffect(() => {
-    if (session.status === "authenticated") router.replace(session.isSuperAdmin ? "/console" : "/app/students");
+    if (session.status === "authenticated") router.replace(session.isSuperAdmin ? "/console" : "/app/dashboard");
   }, [session, router]);
 
   function showError(err: unknown) {
@@ -73,8 +73,8 @@ export default function LoginPage() {
   if (choice) {
     return (
       <AuthShell
-        title="Choose an organisation"
-        subtitle="Your account belongs to more than one. Pick where to go."
+        title="Choose a school"
+        subtitle="Your account is part of more than one. Where would you like to go?"
         footer={
           <button className="font-medium text-accent hover:underline" onClick={() => setChoice(null)}>
             Use a different account
@@ -82,19 +82,28 @@ export default function LoginPage() {
         }
       >
         {error && <div className="mb-4"><Alert>{error}</Alert></div>}
-        <ul className="space-y-2">
+        <ul className="space-y-2.5">
           {choice.tenants.map((t) => (
             <li key={t.id}>
               <button
                 onClick={() => onSelect(t.id)}
                 disabled={selecting !== null}
-                className="flex w-full items-center justify-between gap-3 rounded-lg border border-border px-4 py-3 text-left transition-colors hover:border-accent hover:bg-accent-soft disabled:opacity-60"
+                className="group flex w-full items-center gap-3 rounded-xl border border-border bg-surface px-4 py-3.5 text-left transition-all hover:-translate-y-px hover:border-accent hover:shadow-md hover:shadow-accent/10 disabled:opacity-60"
               >
-                <span className="min-w-0">
+                <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-accent-soft text-sm font-semibold text-accent">{t.name.trim()[0]?.toUpperCase()}</span>
+                <span className="min-w-0 flex-1">
                   <span className="block truncate font-medium">{t.name}</span>
-                  <span className="block truncate text-xs text-muted">{t.slug}</span>
+                  <span className="mt-0.5 inline-block">
+                    <Badge tone="accent">{t.role}</Badge>
+                  </span>
                 </span>
-                {selecting === t.id ? <Spinner /> : <Badge tone="accent">{t.role}</Badge>}
+                {selecting === t.id ? (
+                  <Spinner className="text-accent" />
+                ) : (
+                  <svg viewBox="0 0 24 24" className="size-4 text-muted transition-transform group-hover:translate-x-0.5 group-hover:text-accent" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" aria-hidden>
+                    <path d="M9 6l6 6-6 6" />
+                  </svg>
+                )}
               </button>
             </li>
           ))}
@@ -106,7 +115,7 @@ export default function LoginPage() {
   return (
     <AuthShell
       title="Welcome back"
-      subtitle="Sign in to your EduFlow account"
+      subtitle="Sign in to manage your school."
       footer={
         <>
           New to EduFlow?{" "}
@@ -116,33 +125,42 @@ export default function LoginPage() {
         </>
       }
     >
-      <form onSubmit={onSubmit} className="space-y-4" noValidate>
+      <form onSubmit={onSubmit} className="space-y-5" noValidate>
         {error && <Alert>{error}</Alert>}
-        <Field label="Email" htmlFor="email" error={errors.email}>
-          <Input
+        <AuthField label="Email" htmlFor="email" error={errors.email}>
+          <AuthInput
             id="email"
+            icon={AUTH_ICONS.mail}
             type="email"
+            inputMode="email"
             autoComplete="email"
+            autoCapitalize="none"
             required
+            autoFocus
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             aria-invalid={Boolean(errors.email)}
             placeholder="you@school.edu"
           />
-        </Field>
-        <Field label="Password" htmlFor="password" error={errors.password}>
-          <Input
+        </AuthField>
+        <AuthField label="Password" htmlFor="password" error={errors.password}>
+          <PasswordInput
             id="password"
-            type="password"
             autoComplete="current-password"
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             aria-invalid={Boolean(errors.password)}
+            placeholder="Your password"
           />
-        </Field>
-        <Button type="submit" className="w-full" loading={pending}>
+        </AuthField>
+        <Button type="submit" className="h-11 w-full rounded-xl text-[15px] shadow-lg shadow-accent/20" loading={pending}>
           Sign in
+          {!pending && (
+            <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M5 12h14M13 6l6 6-6 6" />
+            </svg>
+          )}
         </Button>
       </form>
     </AuthShell>

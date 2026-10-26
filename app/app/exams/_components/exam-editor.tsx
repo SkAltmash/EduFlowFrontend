@@ -4,6 +4,7 @@ import { useState } from "react";
 import { fieldErrors } from "@/components/auth-shell";
 import { Drawer, Section, errorMessage, useResource } from "@/components/data";
 import { Alert, Button, Field, ICONS, Icon, Input, Select, cx } from "@/components/ui";
+import { loadClassList, type SchoolClass } from "@/lib/academics";
 import { ApiError, api } from "@/lib/api";
 import { localToday, type ClassSummary } from "@/lib/attendance";
 import { SUBJECT_PRESETS, type Exam, type ExamView } from "@/lib/exams";
@@ -30,7 +31,16 @@ export function ExamEditor({
   onSaved: (view: ExamView) => void;
 }) {
   const classes = useResource(() => api<{ classes: ClassSummary[] }>(`/api/attendance/classes?date=${localToday()}`), "classes");
-  const grades = [...new Set(classes.data?.classes.map((c) => c.grade))];
+  const classList = useResource(loadClassList, "academics-classes");
+  // The school's class list (in its order) when it has one; otherwise classes that have students
+  const listed = classList.data?.classes ?? [];
+  const options = listed.length
+    ? listed.map((c) => ({ grade: c.name, sections: c.sections.map((sec) => ({ section: sec, students: c.sectionCounts[sec] ?? 0 })), subjects: c.subjects }))
+    : [...new Set(classes.data?.classes.map((c) => c.grade))].map((g) => ({
+        grade: g,
+        sections: (classes.data?.classes ?? []).filter((c) => c.grade === g && c.section).map((c) => ({ section: c.section, students: c.students })),
+        subjects: [] as SchoolClass["subjects"],
+      }));
 
   const [name, setName] = useState(exam?.name ?? "");
   const [grade, setGrade] = useState(exam?.grade ?? defaults?.grade ?? "");
@@ -45,7 +55,17 @@ export function ExamEditor({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const sections = (classes.data?.classes ?? []).filter((c) => c.grade === grade && c.section);
+  const sections = options.find((o) => o.grade === grade)?.sections ?? [];
+
+  /** A new test starts with the class's subjects (Settings → Classes) unless subjects were already typed. */
+  function chooseGrade(value: string) {
+    setGrade(value);
+    setSection("");
+    const preset = options.find((o) => o.grade === value)?.subjects ?? [];
+    if (!exam && preset.length && subjects.every((s) => !s.name.trim())) {
+      setSubjects(preset.map((p) => ({ ...emptyRow(p.name), maxMarks: p.maxMarks ? String(p.maxMarks) : sameMax })));
+    }
+  }
   const used = new Set(subjects.map((s) => s.name.trim().toLowerCase()));
   const total = subjects.reduce((t, s) => t + (Number(s.maxMarks) || 0), 0);
 
@@ -125,13 +145,14 @@ export function ExamEditor({
             </Field>
           </div>
           <Field label="Class *" htmlFor="ex-grade" error={errors.grade}>
-            <Select id="ex-grade" value={grade} onChange={(e) => { setGrade(e.target.value); setSection(""); }}>
+            <Select id="ex-grade" value={grade} onChange={(e) => chooseGrade(e.target.value)}>
               <option value="">Choose…</option>
-              {grades.map((g) => (
-                <option key={g} value={g}>
-                  Class {g}
+              {options.map((o) => (
+                <option key={o.grade} value={o.grade}>
+                  Class {o.grade}
                 </option>
               ))}
+              {grade && !options.some((o) => o.grade === grade) && <option value={grade}>Class {grade}</option>}
             </Select>
           </Field>
           <Field label="Section" htmlFor="ex-section" hint="All sections = one test for the whole class">

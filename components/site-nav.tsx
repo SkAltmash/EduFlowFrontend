@@ -30,7 +30,7 @@ export function SiteNav() {
           <ThemeToggle className="mr-1 max-sm:hidden" />
           {session.status === "authenticated" ? (
             <>
-              <Link href={session.isSuperAdmin ? "/console" : "/app/students"} className={buttonClass("primary", "sm")}>
+              <Link href={session.isSuperAdmin ? "/console" : "/app/dashboard"} className={buttonClass("primary", "sm")}>
                 {session.isSuperAdmin ? "Console" : "Open app"}
               </Link>
               <Button variant="ghost" size="sm" onClick={logout} className="max-sm:hidden">

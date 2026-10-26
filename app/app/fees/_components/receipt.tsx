@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, type Ref } from "react";
+import { SchoolLetterhead, useSchoolProfile } from "@/components/letterhead";
 import { PrintPortal, ShareImageButton } from "@/components/share";
 import { WhatsAppButton, WhatsAppDrawer } from "@/components/whatsapp-send";
 import { Drawer, errorMessage, formatDate, useResource } from "@/components/data";
@@ -13,6 +14,7 @@ import { MODE_LABEL, MODE_REFERENCE, amountInWords, formatMoney, type Receipt } 
 export function ReceiptDocument({ receipt, ref }: { receipt: Receipt; ref?: Ref<HTMLDivElement> }) {
   const { payment: p, school, currentBalance } = receipt;
   const cls = p.student.grade ? className(p.student.grade, p.student.section) : "—";
+  const note = useSchoolProfile()?.receiptNote;
   return (
     <div ref={ref} className="relative mx-auto w-full max-w-xl overflow-hidden rounded-lg border border-zinc-300 bg-white p-6 text-[13px] leading-relaxed text-zinc-900 shadow-sm print:max-w-none print:rounded-none print:border-0 print:p-0 print:shadow-none">
       {p.voided && (
@@ -20,16 +22,16 @@ export function ReceiptDocument({ receipt, ref }: { receipt: Receipt; ref?: Ref<
           <span className="-rotate-12 rounded-md border-4 border-red-600/70 px-6 py-2 text-5xl font-black tracking-widest text-red-600/70">VOID</span>
         </div>
       )}
-      <div className="flex items-start justify-between gap-4 border-b-2 border-zinc-900 pb-3">
-        <div>
-          <p className="text-lg font-bold">{school.name}</p>
-          <p className="text-xs uppercase tracking-widest text-zinc-500">Fee receipt</p>
-        </div>
-        <div className="text-right">
-          <p className="font-mono text-base font-semibold">{p.receiptNo}</p>
-          <p className="text-xs text-zinc-500">{formatDay(p.date, "long")}</p>
-        </div>
-      </div>
+      <SchoolLetterhead
+        name={school.name}
+        title="Fee receipt"
+        right={
+          <>
+            <p className="font-mono text-base font-semibold">{p.receiptNo}</p>
+            <p className="text-xs text-zinc-500">{formatDay(p.date, "long")}</p>
+          </>
+        }
+      />
 
       <dl className="grid grid-cols-2 gap-x-6 gap-y-1 py-3">
         <div>
@@ -108,6 +110,7 @@ export function ReceiptDocument({ receipt, ref }: { receipt: Receipt; ref?: Ref<
         </span>
         <span className="border-t border-zinc-400 pt-1">Authorised signature</span>
       </div>
+      {note && <p className="mt-5 border-t border-dashed border-zinc-300 pt-2 text-[11px] text-zinc-600">{note}</p>}
       <p className="mt-4 text-center text-[10px] text-zinc-400">Computer-generated receipt · EduFlow</p>
     </div>
   );

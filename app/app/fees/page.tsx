@@ -46,18 +46,15 @@ export default function FeesPage() {
 
   return (
     <div className="pb-24 sm:pb-0">
-      <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
-        <div>
+      <div className="mb-5 flex items-end justify-between gap-4">
+        <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight">Fees</h1>
           <p className="mt-1 text-sm text-muted">Plans, dues, collections and receipts.</p>
         </div>
-        {/* Wrapped: Button's own inline-flex would override `hidden` */}
-        <div className="hidden sm:block">
-          <Button onClick={() => setCollectFor(null)}>
-            <Icon d={ICONS.plus} />
-            Collect fee
-          </Button>
-        </div>
+        <Button onClick={() => setCollectFor(null)} className="shrink-0">
+          <Icon d={ICONS.plus} />
+          Collect fee
+        </Button>
       </div>
 
       <div role="tablist" className="-mx-4 mb-5 flex gap-1 overflow-x-auto border-b border-border px-4 sm:mx-0 sm:px-0">
@@ -91,13 +88,13 @@ export default function FeesPage() {
       {tab === "payments" && <Payments refreshKey={refreshKey} onOpen={setReceiptId} />}
       {tab === "plans" && <Plans onChanged={refresh} />}
 
-      {/* Mobile: floating collect button */}
+      {/* Phones: labelled floating button within thumb reach, above the tab bar */}
       <button
         onClick={() => setCollectFor(null)}
-        aria-label="Collect fee"
-        className="fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-5 z-30 grid size-14 place-items-center rounded-full bg-accent text-accent-foreground shadow-lg shadow-accent/30 transition-transform active:scale-95 sm:hidden"
+        className="fixed bottom-[calc(var(--bottom-nav-h,0px)+1rem)] right-4 z-30 flex h-12 items-center gap-2 rounded-full bg-accent pl-4 pr-5 text-sm font-semibold text-accent-foreground shadow-lg shadow-accent/30 transition-transform active:scale-95 sm:hidden"
       >
-        <span className="text-2xl font-semibold leading-none">₹</span>
+        <span className="text-lg leading-none">₹</span>
+        Collect fee
       </button>
 
       {ledgerId && (

@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { fieldErrors } from "@/components/auth-shell";
-import { Drawer, Section, errorMessage } from "@/components/data";
+import { Drawer, Section, errorMessage, useResource } from "@/components/data";
 import { Alert, Button, Field, ICONS, Icon, Input, Select, cx } from "@/components/ui";
+import { loadClassList, loadYears } from "@/lib/academics";
 import { ApiError, api } from "@/lib/api";
 import { localToday } from "@/lib/attendance";
 import { formatMoney, moneyInput, parseMoney, type FeePlan } from "@/lib/fees";
@@ -81,6 +82,9 @@ export function PlanEditor({ plan, onClose, onSaved }: { plan: FeePlan | null; o
     return `${y}-${String(y + 1).slice(2)}`;
   })());
   const [grade, setGrade] = useState(plan?.grade ?? "");
+  // Suggestions from Settings → Classes and Academic year
+  const years = useResource(loadYears, "academics-years");
+  const classList = useResource(loadClassList, "academics-classes");
   const [description, setDescription] = useState(plan?.description ?? "");
 
   // Generator inputs (only used to (re)build the installment list)
@@ -184,10 +188,20 @@ export function PlanEditor({ plan, onClose, onSaved }: { plan: FeePlan | null; o
             </Field>
           </div>
           <Field label="Academic year" htmlFor="plan-year">
-            <Input id="plan-year" value={academicYear} onChange={(e) => setAcademicYear(e.target.value)} placeholder="2026-27" />
+            <Input id="plan-year" list="plan-years" value={academicYear} onChange={(e) => setAcademicYear(e.target.value)} placeholder="2026-27" />
+            <datalist id="plan-years">
+              {years.data?.years.map((y) => (
+                <option key={y.id} value={y.name} />
+              ))}
+            </datalist>
           </Field>
           <Field label="For class" htmlFor="plan-grade" hint="Optional, for reference">
-            <Input id="plan-grade" value={grade} onChange={(e) => setGrade(e.target.value)} placeholder="e.g. 5" />
+            <Input id="plan-grade" list="plan-grades" value={grade} onChange={(e) => setGrade(e.target.value)} placeholder="e.g. 5" />
+            <datalist id="plan-grades">
+              {classList.data?.classes.map((c) => (
+                <option key={c.id} value={c.name} />
+              ))}
+            </datalist>
           </Field>
           <div className="sm:col-span-2">
             <Field label="Description" htmlFor="plan-desc">

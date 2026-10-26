@@ -339,7 +339,7 @@ export default function StudentsPage() {
         <button
           onClick={() => setOpenId(null)}
           aria-label="Add student"
-          className="fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-5 z-30 grid size-14 place-items-center rounded-full bg-accent text-accent-foreground shadow-lg shadow-accent/30 transition-transform active:scale-95 sm:hidden"
+          className="fixed bottom-[calc(var(--bottom-nav-h,0px)+1rem)] right-5 z-30 grid size-14 place-items-center rounded-full bg-accent text-accent-foreground shadow-lg shadow-accent/30 transition-transform active:scale-95 sm:hidden"
         >
           <Icon d={ICONS.plus} className="size-6" />
         </button>

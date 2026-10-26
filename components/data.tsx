@@ -194,6 +194,7 @@ export function Drawer({
   children,
   footer,
   side = "right",
+  size = "md",
 }: {
   title: ReactNode;
   onClose: () => void;
@@ -201,6 +202,8 @@ export function Drawer({
   /** Pinned under the scrolling body, e.g. Save / Cancel */
   footer?: ReactNode;
   side?: "right" | "bottom";
+  /** Width of a right-side panel: "lg" for big tables (e.g. year-end promotion) */
+  size?: "md" | "lg";
 }) {
   const close = useEffectEvent(onClose);
 
@@ -226,7 +229,7 @@ export function Drawer({
           "relative flex w-full flex-col bg-background shadow-xl",
           bottom
             ? "max-h-[88dvh] rounded-t-2xl border-t border-border motion-safe:animate-slide-in-up"
-            : "h-dvh max-w-lg border-l border-border motion-safe:animate-slide-in-right"
+            : cx("h-dvh border-l border-border motion-safe:animate-slide-in-right", size === "lg" ? "max-w-3xl" : "max-w-lg")
         )}
       >
         {bottom && <div aria-hidden className="mx-auto mt-2.5 h-1 w-10 shrink-0 rounded-full bg-border" />}

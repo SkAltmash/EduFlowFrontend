@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useResource } from "@/components/data";
+import { useSchoolProfile } from "@/components/letterhead";
 import { Alert, Badge, Skeleton, cx } from "@/components/ui";
 import { api } from "@/lib/api";
 import { addDays, className, formatDay, localToday } from "@/lib/attendance";
@@ -9,13 +10,13 @@ import { MODE_LABEL, formatMoney, formatMoneyCompact, type FeeSummary } from "@/
 
 type Range = "month" | "30d" | "year";
 
-function rangeDates(range: Range) {
+function rangeDates(range: Range, yearStartMonth: number) {
   const today = localToday();
   if (range === "month") return { from: `${today.slice(0, 7)}-01`, to: today };
   if (range === "30d") return { from: addDays(today, -29), to: today };
-  // Academic year from 1 April
+  // Academic year from the 1st of the school's start month (Settings → School profile)
   const [y, m] = today.split("-").map(Number);
-  return { from: `${m >= 4 ? y : y - 1}-04-01`, to: today };
+  return { from: `${m >= yearStartMonth ? y : y - 1}-${String(yearStartMonth).padStart(2, "0")}-01`, to: today };
 }
 
 const MONTH_SHORT = new Intl.DateTimeFormat(undefined, { month: "short", timeZone: "UTC" });
@@ -139,7 +140,7 @@ function Kpi({ label, value, hint, tone, action }: { label: string; value: strin
 
 export function Overview({ refreshKey, onViewOverdue, onOpenReceipt }: { refreshKey: number; onViewOverdue: () => void; onOpenReceipt: (id: string) => void }) {
   const [range, setRange] = useState<Range>("month");
-  const { from, to } = rangeDates(range);
+  const { from, to } = rangeDates(range, useSchoolProfile()?.academicYearStart ?? 4);
   const path = `/api/fees/summary?from=${from}&to=${to}&today=${localToday()}`;
   const { data, error } = useResource(() => api<FeeSummary>(path), `${path}#${refreshKey}`);
   const modeMax = Math.max(...(data?.byMode.map((m) => m.amount) ?? [0]), 1);

@@ -2,6 +2,7 @@
 
 import { useRef, useState, type Ref } from "react";
 import { Drawer, useResource } from "@/components/data";
+import { SchoolLetterhead } from "@/components/letterhead";
 import { PRINT_ICON, PrintPortal, ShareImageButton } from "@/components/share";
 import { Alert, Button, Icon, Spinner, cx } from "@/components/ui";
 import { WhatsAppButton, WhatsAppDrawer } from "@/components/whatsapp-send";
@@ -26,15 +27,7 @@ function Paper({ children, innerRef }: { children: React.ReactNode; innerRef?: R
 }
 
 function Header({ school, title, right }: { school: string; title: string; right: React.ReactNode }) {
-  return (
-    <div className="flex items-start justify-between gap-4 border-b-2 border-zinc-900 pb-3">
-      <div>
-        <p className="text-lg font-bold">{school}</p>
-        <p className="text-xs uppercase tracking-widest text-zinc-500">{title}</p>
-      </div>
-      <div className="text-right">{right}</div>
-    </div>
-  );
+  return <SchoolLetterhead name={school} title={title} right={right} />;
 }
 
 function StudentBlock({ name, admissionNo, className, roll }: { name: string; admissionNo: string; className: string; roll: string }) {

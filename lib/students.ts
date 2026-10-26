@@ -26,6 +26,8 @@ export interface Student {
   admissionDate: string | null;
   status: StudentStatus;
   notes: string;
+  /** One entry per finished academic year (written by year-end promotion), oldest first */
+  classHistory?: { year: string; grade: string; section: string; rollNo: string; outcome: "promoted" | "retained" | "graduated" | "left" }[];
   createdAt: string;
   updatedAt: string;
 }

@@ -415,8 +415,8 @@ export function MarksSheet({ examId, onBack, onChanged, onDeleted }: { examId: s
       )}
 
       {/* Save bar */}
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/95 backdrop-blur md:left-60">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-8">
+      <div className="fixed inset-x-0 bottom-[var(--bottom-nav-h,0px)] z-30 border-t border-border bg-background/95 backdrop-blur md:left-[var(--sidebar-w,15rem)]">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-8 md:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           <span className="text-sm">
             {dirty ? (
               <span className="font-medium">

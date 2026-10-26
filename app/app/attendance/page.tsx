@@ -4,6 +4,7 @@ import { useCallback, useRef, useState } from "react";
 import { useResource } from "@/components/data";
 import { Alert, Button, cx } from "@/components/ui";
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { formatRate, localToday, type ClassSummary } from "@/lib/attendance";
 import { ClassGrid } from "./_components/class-grid";
 import { DayPicker } from "./_components/day-picker";
@@ -13,6 +14,14 @@ import { Report } from "./_components/report";
 type View = { tab: "mark"; open: { grade: string; section: string } | null } | { tab: "report" };
 
 export default function AttendancePage() {
+  const { session } = useAuth();
+  if (session.status === "authenticated" && session.role === "accountant") {
+    return <p className="rounded-xl border border-border bg-surface px-6 py-14 text-center text-sm text-muted">Attendance is for teachers and admins. Accountants don&apos;t have access.</p>;
+  }
+  return <AttendanceWorkspace />;
+}
+
+function AttendanceWorkspace() {
   const [date, setDate] = useState(localToday);
   const [view, setView] = useState<View>({ tab: "mark", open: null });
   const dirtyRef = useRef(false);

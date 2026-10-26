@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { AuthShell, fieldErrors } from "@/components/auth-shell";
-import { PasswordRules, isStrongPassword } from "@/components/password-rules";
-import { Alert, Button, Field, Input } from "@/components/ui";
+import { AUTH_ICONS, AuthField, AuthInput, AuthShell, PasswordInput, PasswordStrength, fieldErrors } from "@/components/auth-shell";
+import { isStrongPassword } from "@/components/password-rules";
+import { Alert, Button } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
@@ -19,7 +19,7 @@ export default function RegisterPage() {
   const [pending, setPending] = useState(false);
 
   useEffect(() => {
-    if (session.status === "authenticated") router.replace(session.isSuperAdmin ? "/console" : "/app/students");
+    if (session.status === "authenticated") router.replace(session.isSuperAdmin ? "/console" : "/app/dashboard");
   }, [session, router]);
 
   const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
@@ -61,8 +61,8 @@ export default function RegisterPage() {
 
   return (
     <AuthShell
-      title="Start your 7-day free trial"
-      subtitle="Every feature included. No credit card needed."
+      title="Start your free trial"
+      subtitle="7 days of EduFlow for your whole school."
       footer={
         <>
           Already have an account?{" "}
@@ -72,51 +72,60 @@ export default function RegisterPage() {
         </>
       }
     >
-      <form onSubmit={onSubmit} className="space-y-4" noValidate>
+      <div className="mb-6 flex flex-wrap gap-2">
+        {["Every feature", "No credit card", "Set up in minutes"].map((t) => (
+          <span key={t} className="inline-flex items-center gap-1.5 rounded-full bg-success-soft px-2.5 py-1 text-xs font-medium text-success">
+            <svg viewBox="0 0 16 16" className="size-3.5" fill="none" stroke="currentColor" strokeWidth={2.2} aria-hidden>
+              <path d="M3.5 8.5l3 3 6-7" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            {t}
+          </span>
+        ))}
+      </div>
+      <form onSubmit={onSubmit} className="space-y-5" noValidate>
         {error && <Alert>{error}</Alert>}
-        <Field label="Full name" htmlFor="name" error={errors.name}>
-          <Input id="name" autoComplete="name" value={form.name} onChange={set("name")} aria-invalid={Boolean(errors.name)} placeholder="Alice Khan" />
-        </Field>
-        <Field label="Email" htmlFor="email" error={errors.email}>
-          <Input
-            id="email"
-            type="email"
-            autoComplete="email"
-            value={form.email}
-            onChange={set("email")}
-            aria-invalid={Boolean(errors.email)}
-            placeholder="you@school.edu"
-          />
-        </Field>
-        <Field label="Password" htmlFor="password" error={errors.password}>
-          <Input
-            id="password"
-            type="password"
-            autoComplete="new-password"
-            value={form.password}
-            onChange={set("password")}
-            aria-invalid={Boolean(errors.password)}
-          />
-        </Field>
-        <PasswordRules value={form.password} />
-        <Field
-          label="Organisation name"
-          htmlFor="tenantName"
-          error={errors.tenantName}
-          hint="Optional. Your school, tuition centre or coaching institute."
-        >
-          <Input
+        <AuthField label="School name" htmlFor="tenantName" error={errors.tenantName} extra={<span className="text-xs text-muted">Optional</span>} hint="Your school, tuition centre or coaching institute.">
+          <AuthInput
             id="tenantName"
+            icon={AUTH_ICONS.school}
             autoComplete="organization"
+            autoFocus
             value={form.tenantName}
             onChange={set("tenantName")}
             aria-invalid={Boolean(errors.tenantName)}
             placeholder="Sunrise Public School"
           />
-        </Field>
-        <Button type="submit" className="w-full" loading={pending}>
+        </AuthField>
+        <AuthField label="Your name" htmlFor="name" error={errors.name}>
+          <AuthInput id="name" icon={AUTH_ICONS.user} autoComplete="name" value={form.name} onChange={set("name")} aria-invalid={Boolean(errors.name)} placeholder="Alice Khan" />
+        </AuthField>
+        <AuthField label="Work email" htmlFor="email" error={errors.email}>
+          <AuthInput
+            id="email"
+            icon={AUTH_ICONS.mail}
+            type="email"
+            inputMode="email"
+            autoComplete="email"
+            autoCapitalize="none"
+            value={form.email}
+            onChange={set("email")}
+            aria-invalid={Boolean(errors.email)}
+            placeholder="you@school.edu"
+          />
+        </AuthField>
+        <AuthField label="Password" htmlFor="password" error={errors.password}>
+          <PasswordInput id="password" autoComplete="new-password" value={form.password} onChange={set("password")} aria-invalid={Boolean(errors.password)} placeholder="Create a strong password" />
+          <PasswordStrength value={form.password} />
+        </AuthField>
+        <Button type="submit" className="h-11 w-full rounded-xl text-[15px] shadow-lg shadow-accent/20" loading={pending}>
           Start free trial
+          {!pending && (
+            <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M5 12h14M13 6l6 6-6 6" />
+            </svg>
+          )}
         </Button>
+        <p className="text-center text-xs text-muted">Your 7-day trial starts today. You&apos;ll be the owner and can add your team later.</p>
       </form>
     </AuthShell>
   );

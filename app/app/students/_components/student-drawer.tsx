@@ -3,8 +3,10 @@
 import { useState } from "react";
 import { fieldErrors } from "@/components/auth-shell";
 import { Drawer, Notice, Section, errorMessage, formatDate, useResource } from "@/components/data";
-import { Button, Field, ICONS, Icon, Input, Select, Skeleton, Spinner, cx } from "@/components/ui";
+import { Badge, Button, Field, ICONS, Icon, Input, Select, Skeleton, Spinner, cx } from "@/components/ui";
+import { OUTCOME_LABEL, loadClassList } from "@/lib/academics";
 import { ApiError, api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import {
   LOW_ATTENDANCE,
   STATUS_META,
@@ -110,6 +112,10 @@ function StudentForm({ initial, canManage, onClose, onSaved }: Props & { initial
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<{ tone: "success" | "danger"; text: string } | null>(null);
   const [busy, setBusy] = useState<"save" | "delete" | null>(null);
+
+  // The school's class list; until one exists, class and section are typed freely
+  const classList = useResource(loadClassList, "academics-classes");
+  const chosenClass = classList.data?.classes.find((c) => c.name === form.grade);
 
   const original = student ? toForm(student) : undefined;
   const dirty = Object.keys(toPayload(form, original)).length > 0;
@@ -254,8 +260,37 @@ function StudentForm({ initial, canManage, onClose, onSaved }: Props & { initial
 
         <Section title="Class">
           <div className="grid grid-cols-2 gap-3">
-            {input("grade", "Class", { placeholder: "e.g. 5" })}
-            {input("section", "Section", { placeholder: "e.g. A", autoCapitalize: "characters" })}
+            {classList.data?.classes.length ? (
+              <>
+                <Field label="Class" htmlFor="s-grade" error={errors.grade}>
+                  <Select id="s-grade" value={form.grade} onChange={(e) => setForm((f) => ({ ...f, grade: e.target.value, section: "" }))} aria-invalid={Boolean(errors.grade)}>
+                    <option value="">No class</option>
+                    {classList.data.classes.map((c) => (
+                      <option key={c.id} value={c.name}>
+                        {c.name}
+                      </option>
+                    ))}
+                    {form.grade && !chosenClass && <option value={form.grade}>{form.grade} (not in class list)</option>}
+                  </Select>
+                </Field>
+                <Field label="Section" htmlFor="s-section" error={errors.section}>
+                  <Select id="s-section" value={form.section} onChange={set("section")} disabled={!chosenClass?.sections.length && !form.section} aria-invalid={Boolean(errors.section)}>
+                    <option value="">{chosenClass && !chosenClass.sections.length ? "No sections" : "No section"}</option>
+                    {chosenClass?.sections.map((sec) => (
+                      <option key={sec} value={sec}>
+                        {sec}
+                      </option>
+                    ))}
+                    {form.section && !chosenClass?.sections.includes(form.section) && <option value={form.section}>{form.section} (not listed)</option>}
+                  </Select>
+                </Field>
+              </>
+            ) : (
+              <>
+                {input("grade", "Class", { placeholder: "e.g. 5" })}
+                {input("section", "Section", { placeholder: "e.g. A", autoCapitalize: "characters" })}
+              </>
+            )}
             {input("rollNo", "Roll no", { inputMode: "numeric" })}
             {input("admissionDate", "Admission date", { type: "date" })}
           </div>
@@ -355,6 +390,22 @@ function ProfileView({ student: s }: { student: Student }) {
           ["Admitted", s.admissionDate && formatDay(s.admissionDate)],
         ]}
       />
+      {s.classHistory && s.classHistory.length > 0 && (
+        <Section title="Class history">
+          <ol className="divide-y divide-border rounded-xl border border-border bg-surface text-sm">
+            {[...s.classHistory].reverse().map((h) => (
+              <li key={h.year} className="flex items-center justify-between gap-3 px-4 py-2.5">
+                <span className="w-20 shrink-0 text-muted">{h.year}</span>
+                <span className="min-w-0 flex-1 truncate">
+                  Class {h.section ? `${h.grade} - ${h.section}` : h.grade}
+                  {h.rollNo && <span className="text-muted"> · Roll {h.rollNo}</span>}
+                </span>
+                <Badge tone={h.outcome === "promoted" || h.outcome === "graduated" ? "success" : h.outcome === "left" ? "danger" : "neutral"}>{OUTCOME_LABEL[h.outcome]}</Badge>
+              </li>
+            ))}
+          </ol>
+        </Section>
+      )}
       <DetailCard
         title="Contact"
         rows={[
@@ -391,8 +442,15 @@ function DetailCard({ title, rows }: { title: string; rows: [string, React.React
   );
 }
 
-/** Last 30 days: rate, counts and one square per day (grey = not marked). */
+/** Teaching staff only: accountants don't see attendance. */
 function AttendanceCard({ studentId }: { studentId: string }) {
+  const { session } = useAuth();
+  if (session.status === "authenticated" && session.role === "accountant") return null;
+  return <AttendanceHistory studentId={studentId} />;
+}
+
+/** Last 30 days: rate, counts and one square per day (grey = not marked). */
+function AttendanceHistory({ studentId }: { studentId: string }) {
   const to = localToday();
   const from = addDays(to, -29);
   const path = `/api/attendance/students/${studentId}?from=${from}&to=${to}`;

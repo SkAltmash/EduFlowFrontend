@@ -30,6 +30,8 @@ interface AuthContextValue {
   selectTenant(tenantId: string, selectionToken: string): Promise<AuthResult>;
   register(input: RegisterInput): Promise<AuthResult>;
   logout(): Promise<void>;
+  /** Applies a change the user just saved (their name, the school's name) without signing in again. */
+  updateSession(patch: { user?: User; tenant?: Tenant }): void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -100,9 +102,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const updateSession = useCallback((patch: { user?: User; tenant?: Tenant }) => {
+    setSession((s) => (s.status === "authenticated" ? { ...s, ...patch } : s));
+  }, []);
+
   const value = useMemo(
-    () => ({ session, login, selectTenant, register, logout }),
-    [session, login, selectTenant, register, logout]
+    () => ({ session, login, selectTenant, register, logout, updateSession }),
+    [session, login, selectTenant, register, logout, updateSession]
   );
 
   return <AuthContext value={value}>{children}</AuthContext>;
