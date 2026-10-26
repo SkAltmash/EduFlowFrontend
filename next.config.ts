@@ -28,7 +28,10 @@ const nextConfig: NextConfig = {
   // calls /api/* on this site and it's forwarded to the backend. The login cookie then
   // belongs to this site, so phones (Safari, Brave) that block third-party cookies keep you signed in.
   async rewrites() {
-    const backend = (process.env.BACKEND_URL ?? "").trim().replace(/\/+$/, "");
+    // Production builds fall back to the live API, so the proxy works even if BACKEND_URL
+    // is missing on the host; `next dev` only proxies when BACKEND_URL is set.
+    const fallback = process.env.NODE_ENV === "production" ? "https://eduflowbackend-1.onrender.com" : "";
+    const backend = (process.env.BACKEND_URL || fallback).trim().replace(/\/+$/, "");
     return backend ? [{ source: "/api/:path*", destination: `${backend}/api/:path*` }] : [];
   },
 };

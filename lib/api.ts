@@ -59,6 +59,9 @@ export class ApiError extends Error {
   }
 }
 
+/** Long enough for a free-tier server to wake from sleep (~50s). */
+const REQUEST_TIMEOUT_MS = 70_000;
+
 let accessToken: string | null = null;
 let refreshPromise: Promise<AuthResult> | null = null;
 
@@ -81,6 +84,7 @@ async function send<T>(path: string, { method = "GET", body, token }: RequestOpt
   const bearer = token ?? accessToken;
   if (bearer) headers.Authorization = `Bearer ${bearer}`;
 
+  const where = API_URL || "this site's /api";
   let res: Response;
   try {
     res = await fetch(`${API_URL}${path}`, {
@@ -88,9 +92,14 @@ async function send<T>(path: string, { method = "GET", body, token }: RequestOpt
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
       credentials: "include",
+      // A sleeping free-tier server can take ~50s to wake; don't spin forever
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
-  } catch {
-    throw new ApiError(0, "NETWORK_ERROR", `Cannot reach the API at ${API_URL}. Is the backend running?`);
+  } catch (err) {
+    if ((err as Error)?.name === "TimeoutError") {
+      throw new ApiError(0, "TIMEOUT", "The server is taking too long to respond. It may be waking up. Please try again in a minute.");
+    }
+    throw new ApiError(0, "NETWORK_ERROR", `Cannot reach the API at ${where}. Check your internet connection and try again.`);
   }
 
   if (res.status === 204) return undefined as T;
@@ -98,7 +107,14 @@ async function send<T>(path: string, { method = "GET", body, token }: RequestOpt
   const data = await res.json().catch(() => null);
   if (!res.ok) {
     const err = data?.error;
-    throw new ApiError(res.status, err?.code ?? "UNKNOWN", err?.message ?? res.statusText, err?.details);
+    // Not an API error body (e.g. an HTML 404 page): never show an empty message
+    const fallback =
+      res.status === 404
+        ? `The API wasn't found at ${where} (HTTP 404). The site's API address is set up incorrectly.`
+        : res.status >= 500
+          ? `The server had a problem (HTTP ${res.status}). Please try again.`
+          : `Request failed (HTTP ${res.status}).`;
+    throw new ApiError(res.status, err?.code ?? "UNKNOWN", err?.message || fallback, err?.details);
   }
   return data as T;
 }
