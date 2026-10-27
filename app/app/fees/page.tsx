@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button, ICONS, Icon, cx } from "@/components/ui";
 import { useAuth } from "@/lib/auth";
 import { CollectDrawer } from "./_components/collect-drawer";
@@ -11,28 +12,63 @@ import { Payments } from "./_components/payments";
 import { Plans } from "./_components/plans";
 import { ReceiptDrawer } from "./_components/receipt";
 import { PageIcon } from "@/components/data";
+import { ConcessionsTab } from "./_components/concessions-tab";
 
-type Tab = "overview" | "students" | "payments" | "plans";
+type Tab = "overview" | "students" | "payments" | "plans" | "concessions";
 const TABS: [Tab, string][] = [
   ["overview", "Overview"],
   ["students", "Students"],
   ["payments", "Payments"],
   ["plans", "Fee plans"],
+  ["concessions", "Concessions"],
 ];
 
 export default function FeesPage() {
+  // useSearchParams needs a Suspense boundary; the page itself renders on the client
+  return (
+    <Suspense fallback={null}>
+      <FeesView />
+    </Suspense>
+  );
+}
+
+const TAB_IDS = TABS.map(([t]) => t);
+
+/**
+ * The open tab (?tab=), fee account (?student=) and collect form (?collect=<id>|new) live in
+ * the URL, so they can be linked, reloaded and closed with Back.
+ */
+function FeesView() {
   const { session } = useAuth();
+  const router = useRouter();
+  const params = useSearchParams();
   const role = session.status === "authenticated" ? session.role : undefined;
   const allowed = role === "owner" || role === "admin" || role === "accountant";
   const canVoid = role === "owner" || role === "admin";
 
-  const [tab, setTab] = useState<Tab>("overview");
+  const tabParam = params.get("tab") as Tab | null;
+  const tab: Tab = tabParam && TAB_IDS.includes(tabParam) ? tabParam : "overview";
+  const ledgerId = params.get("student");
+  const collectParam = params.get("collect");
+  // undefined = closed, null = pick a student first
+  const collectFor: string | null | undefined = collectParam === null ? undefined : collectParam === "new" ? null : collectParam;
+  /** Changes some of the URL's parameters; opening something adds a history entry so Back closes it. */
+  const go = (patch: Record<string, string | null>, push = true) => {
+    const next = new URLSearchParams(params.toString());
+    for (const [k, v] of Object.entries(patch)) {
+      if (v === null) next.delete(k);
+      else next.set(k, v);
+    }
+    const url = next.toString() ? `/app/fees?${next}` : "/app/fees";
+    if (push) router.push(url, { scroll: false });
+    else router.replace(url, { scroll: false });
+  };
+  const setTab = (t: Tab) => go({ tab: t === "overview" ? null : t }, false);
+  const setLedgerId = (id: string | null) => go({ student: id, collect: null }, id !== null);
+  const setCollectFor = (id: string | null | undefined) => go({ collect: id === undefined ? null : (id ?? "new"), student: null }, id !== undefined);
   // Bumped after any change so every list refetches
   const [refreshKey, setRefreshKey] = useState(0);
   const refresh = () => setRefreshKey((k) => k + 1);
-  const [ledgerId, setLedgerId] = useState<string | null>(null);
-  // undefined = closed, null = pick a student first
-  const [collectFor, setCollectFor] = useState<string | null | undefined>(undefined);
   const [receiptId, setReceiptId] = useState<string | null>(null);
   const [registerKey, setRegisterKey] = useState(0);
 
@@ -91,6 +127,7 @@ export default function FeesPage() {
       {tab === "students" && <FeeRegisterWithDefault key={registerKey} overdueFirst={registerKey > 0} refreshKey={refreshKey} onOpen={setLedgerId} onCollect={setCollectFor} />}
       {tab === "payments" && <Payments refreshKey={refreshKey} onOpen={setReceiptId} />}
       {tab === "plans" && <Plans onChanged={refresh} />}
+      {tab === "concessions" && <ConcessionsTab onOpen={setLedgerId} refreshKey={refreshKey} />}
 
       {/* Phones: labelled floating button within thumb reach, above the tab bar */}
       <button
@@ -105,10 +142,8 @@ export default function FeesPage() {
         <LedgerDrawer
           studentId={ledgerId}
           onClose={() => setLedgerId(null)}
-          onCollect={() => {
-            setCollectFor(ledgerId);
-            setLedgerId(null);
-          }}
+          // One URL change: closes the account and opens the collect form for this student
+          onCollect={() => setCollectFor(ledgerId)}
           onOpenReceipt={(id) => setReceiptId(id)}
           onChanged={refresh}
         />

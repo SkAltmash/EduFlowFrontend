@@ -30,6 +30,8 @@ export interface AuthResult {
   tenant?: Tenant;
   role?: Role;
   isSuperAdmin?: boolean;
+  /** A super admin looking inside a school from the console */
+  isImpersonating?: boolean;
   accessToken: string;
   accessTokenExpiresAt: string;
 }
@@ -39,7 +41,9 @@ export interface TenantChoice extends Tenant {
 }
 
 export type LoginResult =
-  | ({ requiresTenantSelection: false } & AuthResult)
+  | ({ requiresTenantSelection: false; requiresTwoFactor?: false } & AuthResult)
+  // Super admin with two-step login: send the authenticator code with this token
+  | { requiresTenantSelection: false; requiresTwoFactor: true; twoFactorToken: string }
   | { requiresTenantSelection: true; user: User; tenants: TenantChoice[]; selectionToken: string };
 
 export interface FieldIssue {

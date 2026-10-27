@@ -174,6 +174,11 @@ export function PlanEditor({ plan, onClose, onSaved }: { plan: FeePlan | null; o
       }
     >
       {error && <Alert>{error}</Alert>}
+      {plan && (plan.stats?.students ?? 0) > 0 && (
+        <Alert tone="warning">
+          {plan.stats!.students} student{plan.stats!.students === 1 ? " has" : "s have"} this plan. Saving updates their unpaid dues to match (concessions are applied again). Dues that already have a payment keep their amount.
+        </Alert>
+      )}
       {plan?.stats?.students ? (
         <Alert tone="warning">
           Already assigned to {plan.stats.students} students. Changes apply to students you assign from now on; existing dues keep their amounts.

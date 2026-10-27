@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { PasswordRules, isStrongPassword } from "@/components/password-rules";
-import { Badge, Button, Field, Input, Spinner } from "@/components/ui";
+import { Badge, Button, Field, Icon, Input, Spinner } from "@/components/ui";
+import { WA_ICON } from "@/components/whatsapp-send";
 import { api, type Role } from "@/lib/api";
 import {
   Card,
@@ -16,6 +17,8 @@ import {
   TableState,
   errorMessage,
   formatDate,
+  generatePassword,
+  loginShareLink,
   query,
   useDebounced,
   useResource,
@@ -25,7 +28,7 @@ import {
   type StatusFilter,
 } from "./shared";
 
-export function Users() {
+export function Users({ onOpenSchool }: { onOpenSchool: (id: string) => void }) {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<StatusFilter>("all");
   const [page, setPage] = useState(1);
@@ -38,7 +41,7 @@ export function Users() {
 
   return (
     <>
-      <PageHeader title="Users" description="Every account on the platform." />
+      <PageHeader title="Users" description="Every account on the platform." icon="M16 19c0-2.2-1.8-4-4-4s-4 1.8-4 4M12 12a3 3 0 100-6 3 3 0 000 6zM20 18c0-1.7-1-3.1-2.5-3.7M17 6.3a3 3 0 010 5.4" />
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <Input
           className="max-w-xs"
@@ -58,7 +61,7 @@ export function Users() {
         />
       </div>
       <Card>
-        <Table head={["Name", "Organisations", "Status", "Joined"]}>
+        <Table head={["Name", "Schools", "Status", "Joined"]}>
           <TableState cols={4} loading={list.loading && !list.data} error={list.error} empty={users.length === 0} />
           {users.map((u) => (
             <tr key={u.id} className="cursor-pointer hover:bg-surface-muted" onClick={() => setOpenId(u.id)}>
@@ -80,7 +83,17 @@ export function Users() {
         <Pager pagination={list.data?.pagination} onPage={setPage} />
       </Card>
 
-      {openId && <UserDrawer id={openId} onClose={() => setOpenId(null)} onChanged={list.reload} />}
+      {openId && (
+        <UserDrawer
+          id={openId}
+          onClose={() => setOpenId(null)}
+          onChanged={list.reload}
+          onOpenSchool={(schoolId) => {
+            setOpenId(null);
+            onOpenSchool(schoolId);
+          }}
+        />
+      )}
     </>
   );
 }
@@ -90,10 +103,12 @@ type UserDetail = {
   memberships: { tenant: Pick<AdminTenant, "id" | "name" | "slug" | "isActive">; role: Role; joinedAt: string }[];
 };
 
-function UserDrawer({ id, onClose, onChanged }: { id: string; onClose: () => void; onChanged: () => void }) {
+function UserDrawer({ id, onClose, onChanged, onOpenSchool }: { id: string; onClose: () => void; onChanged: () => void; onOpenSchool: (id: string) => void }) {
   const detail = useResource(() => api<UserDetail>(`/api/admin/users/${id}`), id);
   const [name, setName] = useState<string | null>(null);
   const [password, setPassword] = useState("");
+  // The password just set, so it can be sent once
+  const [sent, setSent] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<{ tone: "success" | "danger"; text: string } | null>(null);
 
@@ -197,10 +212,11 @@ function UserDrawer({ id, onClose, onChanged }: { id: string; onClose: () => voi
             </Section>
           )}
 
-          <Section title={`Organisations (${detail.data!.memberships.length})`}>
+          <Section title={`Schools (${detail.data!.memberships.length})`}>
             <ul className="divide-y divide-border rounded-lg border border-border">
               {detail.data!.memberships.map((m) => (
-                <li key={m.tenant.id} className="flex items-center justify-between gap-3 px-4 py-3 text-sm">
+                <li key={m.tenant.id}>
+                  <button onClick={() => onOpenSchool(m.tenant.id)} className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm hover:bg-surface-muted">
                   <span className="min-w-0">
                     <span className="block truncate font-medium">{m.tenant.name}</span>
                     <span className="block text-xs text-muted">joined {formatDate(m.joinedAt)}</span>
@@ -209,10 +225,11 @@ function UserDrawer({ id, onClose, onChanged }: { id: string; onClose: () => voi
                     {!m.tenant.isActive && <Badge tone="danger">suspended</Badge>}
                     <Badge tone="accent">{m.role}</Badge>
                   </span>
+                  </button>
                 </li>
               ))}
               {detail.data!.memberships.length === 0 && (
-                <li className="px-4 py-6 text-center text-sm text-muted">Not a member of any organisation</li>
+                <li className="px-4 py-6 text-center text-sm text-muted">Not a member of any school</li>
               )}
             </ul>
           </Section>
@@ -227,6 +244,7 @@ function UserDrawer({ id, onClose, onChanged }: { id: string; onClose: () => voi
                     "password",
                     async () => {
                       await api(`/api/admin/users/${id}/reset-password`, { method: "POST", body: { password } });
+                      setSent(password);
                       setPassword("");
                     },
                     "Password reset. All of their sessions were ended."
@@ -234,8 +252,13 @@ function UserDrawer({ id, onClose, onChanged }: { id: string; onClose: () => voi
                 }}
               >
                 <div className="flex gap-2">
+                  <Button type="button" variant="ghost" onClick={() => setPassword(generatePassword())}>
+                    Generate
+                  </Button>
                   <Input
-                    type="password"
+                    type="text"
+                    spellCheck={false}
+                    className="font-mono"
                     autoComplete="new-password"
                     placeholder="New password"
                     value={password}
@@ -246,6 +269,22 @@ function UserDrawer({ id, onClose, onChanged }: { id: string; onClose: () => voi
                   </Button>
                 </div>
                 {password && <PasswordRules value={password} />}
+                {sent && (
+                  <div className="flex flex-wrap items-center gap-2 rounded-lg bg-success-soft px-3 py-2 text-sm">
+                    <span>
+                      New password: <code className="font-mono font-semibold">{sent}</code>
+                    </span>
+                    <a
+                      href={loginShareLink({ name: user.name, email: user.email, password: sent })}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-[#25D366] px-3 py-1.5 text-xs font-semibold text-white"
+                    >
+                      <Icon d={WA_ICON} className="size-4" />
+                      Send login on WhatsApp
+                    </a>
+                  </div>
+                )}
               </form>
             </Section>
           )}

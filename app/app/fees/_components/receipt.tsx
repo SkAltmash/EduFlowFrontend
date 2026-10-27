@@ -74,6 +74,19 @@ export function ReceiptDocument({ receipt, ref }: { receipt: Receipt; ref?: Ref<
           </tr>
         </tbody>
       </table>
+
+      {receipt.concessions && receipt.concessions.length > 0 && (
+        <div className="mt-2 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] text-emerald-900">
+          {receipt.concessions.map((c) => (
+            <p key={`${c.planName}|${c.label}`} className="flex justify-between gap-3">
+              <span>
+                {c.label} fee {formatMoney(c.fee)} − {c.reason}
+              </span>
+              <span className="tabular-nums">= {formatMoney(c.fee - c.discount)}</span>
+            </p>
+          ))}
+        </div>
+      )}
       <p className="mt-2 italic">{amountInWords(p.amount)}</p>
 
       <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 text-xs">

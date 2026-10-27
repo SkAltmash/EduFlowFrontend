@@ -46,7 +46,7 @@ export interface FeePlan {
   installments: Installment[];
   total: number;
   archived: boolean;
-  stats?: { students: number; billed: number; paid: number };
+  stats?: { students: number; billed: number; paid: number; /** Active students of the plan's class without it (e.g. new admissions) */ missing?: number };
 }
 
 export interface Due {
@@ -59,6 +59,7 @@ export interface Due {
   amount: number;
   discount: number;
   discountReason: string;
+  discountSource?: "concession" | "manual" | "";
   paid: number;
   balance: number;
   status: DueStatus;
@@ -80,10 +81,49 @@ export interface Payment {
   voided: { at: string; byName: string; reason: string } | null;
 }
 
+export type ConcessionType = "percent" | "amount" | "fixed" | "free";
+
+/** A standing concession on a student (amounts in paise). */
+export interface Concession {
+  type: ConcessionType;
+  value: number;
+  reason: string;
+  presetId?: string | null;
+  label?: string;
+  updatedByName?: string;
+  updatedAt?: string | null;
+}
+
+export interface ConcessionPreset {
+  id: string | null;
+  name: string;
+  type: ConcessionType;
+  value: number;
+}
+
+/** Discount on one installment; mirrors the server. */
+export function concessionDiscount(amount: number, c: Pick<Concession, "type" | "value"> | null | undefined) {
+  if (!c) return 0;
+  if (c.type === "free") return amount;
+  if (c.type === "percent") return Math.min(amount, Math.round((amount * c.value) / 100));
+  if (c.type === "amount") return Math.min(amount, c.value);
+  return Math.max(0, amount - c.value);
+}
+
+/** "10% off", "₹500 off", "pays ₹1,000", "Free" */
+export function concessionShort(c: Pick<Concession, "type" | "value">) {
+  if (c.type === "free") return "Free";
+  if (c.type === "percent") return `${c.value}% off`;
+  if (c.type === "amount") return `${formatMoney(c.value)} off`;
+  return `Pays ${formatMoney(c.value)}`;
+}
+
 export interface Receipt {
   payment: Payment;
   school: { name: string };
   currentBalance: number;
+  /** Concessions on the dues this payment went to */
+  concessions?: { label: string; planName: string; fee: number; discount: number; reason: string }[];
 }
 
 export interface FeeTotals {
@@ -109,7 +149,7 @@ export interface RegisterRow extends FeeTotals {
 }
 
 export interface Ledger {
-  student: { id: string; fullName: string; admissionNo: string; grade: string; section: string; guardianName: string; guardianPhone: string; status: string };
+  student: { id: string; fullName: string; admissionNo: string; grade: string; section: string; guardianName: string; guardianPhone: string; status: string; concession?: Concession | null };
   dues: Due[];
   payments: Payment[];
   totals: FeeTotals;

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { fieldErrors } from "@/components/auth-shell";
 import { Drawer, Notice, Section, errorMessage, formatDate, useResource } from "@/components/data";
@@ -333,6 +334,7 @@ function ProfileView({ student: s }: { student: Student }) {
   // Teachers see what they need in class; admission and home address are for the office
   const { session } = useAuth();
   const isTeacher = session.status === "authenticated" && session.role === "teacher";
+  const canHandleFees = session.status === "authenticated" && (session.role === "owner" || session.role === "admin" || session.role === "accountant");
   const actions = [
     s.guardianPhone && { href: `tel:${s.guardianPhone}`, label: "Call", icon: ICONS.phone },
     s.guardianPhone && { href: `sms:${s.guardianPhone}`, label: "Message", icon: ICONS.message },
@@ -365,6 +367,19 @@ function ProfileView({ student: s }: { student: Student }) {
               {a.label}
             </a>
           ))}
+        </div>
+      )}
+
+      {/* Fee staff jump straight to this student's fees */}
+      {canHandleFees && (
+        <div className="grid grid-cols-2 gap-2">
+          <Link href={`/app/fees?collect=${s.id}`} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-accent px-4 text-sm font-semibold text-accent-foreground shadow-sm transition-colors hover:bg-accent-hover">
+            <span className="text-base leading-none">₹</span>
+            Collect fee
+          </Link>
+          <Link href={`/app/fees?student=${s.id}`} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-border bg-surface px-4 text-sm font-medium hover:bg-surface-muted">
+            Fee account
+          </Link>
         </div>
       )}
 

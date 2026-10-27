@@ -249,6 +249,17 @@ function CollectForm({
   const s = ledger.data?.student;
   const allocatedById = new Map(allocations.map((a) => [a.invoiceId, a.amount]));
 
+  // One-tap amounts
+  const overdue = selected.filter((d) => d.status === "overdue").reduce((t, d) => t + d.balance, 0);
+  const next = selected[0]?.balance ?? 0;
+  const chips = [
+    { label: "Full", value: selectedTotal },
+    ...(overdue > 0 && overdue < selectedTotal ? [{ label: "Overdue only", value: overdue }] : []),
+    ...(next > 0 && next < selectedTotal && next !== overdue ? [{ label: selected[0].label, value: next }] : []),
+    ...(selectedTotal >= 200 ? [{ label: "Half", value: Math.round(selectedTotal / 200) * 100 }] : []),
+  ];
+  const [moreOpen, setMoreOpen] = useState(false);
+
   return (
     <Drawer
       title={
@@ -264,15 +275,9 @@ function CollectForm({
       onClose={onClose}
       footer={
         open.length > 0 && (
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0 text-sm">
-              <p className="text-muted">Receiving</p>
-              <p className="text-lg font-semibold tabular-nums">{amount ? formatMoney(amount) : "₹0"}</p>
-            </div>
-            <Button onClick={submit} loading={busy} disabled={!canSubmit} className="min-w-40">
-              Record payment
-            </Button>
-          </div>
+          <Button onClick={submit} loading={busy} disabled={!canSubmit} className="h-12 w-full text-base">
+            {canSubmit ? `Record ${formatMoney(amount!)} · ${MODE_LABEL[mode]}` : "Record payment"}
+          </Button>
         )
       }
     >
@@ -282,6 +287,7 @@ function CollectForm({
         <Spinner className="mx-auto my-16" />
       ) : (
         <>
+          {/* Who */}
           <div className="flex items-center gap-3">
             <Avatar name={s.fullName} seed={s.id} />
             <div className="min-w-0 flex-1">
@@ -294,7 +300,7 @@ function CollectForm({
             </div>
             <div className="text-right">
               <p className="text-xs text-muted">Balance</p>
-              <p className="font-semibold tabular-nums">{formatMoney(ledger.data.totals.balance)}</p>
+              <p className={cx("font-semibold tabular-nums", ledger.data.totals.overdue > 0 && "text-danger")}>{formatMoney(ledger.data.totals.balance)}</p>
             </div>
           </div>
 
@@ -306,8 +312,92 @@ function CollectForm({
               <p className="mt-1 text-sm text-muted">This student has no unpaid dues.</p>
             </div>
           ) : (
-            <>
-              <Section title="Dues to pay">
+            <form
+              className="space-y-5"
+              onSubmit={(e) => {
+                e.preventDefault();
+                submit();
+              }}
+            >
+              {/* How much: the main thing on this screen */}
+              <div className={cx("rounded-2xl border bg-surface p-4", amountError ? "border-danger/50" : "border-accent/40")}>
+                <label htmlFor="pay-amount" className="text-sm font-medium text-muted">
+                  Amount received
+                </label>
+                <div className="relative mt-1">
+                  <span className="pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 text-3xl font-semibold text-muted">₹</span>
+                  <input
+                    id="pay-amount"
+                    inputMode="decimal"
+                    autoComplete="off"
+                    autoFocus
+                    value={amountValue}
+                    onFocus={(e) => e.target.select()}
+                    // Enter records it: the Record button lives in the drawer footer, outside this form
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        submit();
+                      }
+                    }}
+                    onChange={(e) => setAmountText(e.target.value.replace(/[^\d.,]/g, ""))}
+                    aria-invalid={Boolean(amountError)}
+                    className="h-14 w-full bg-transparent pl-7 text-4xl font-semibold tabular-nums tracking-tight outline-none"
+                  />
+                </div>
+                <p className={cx("mt-1 text-xs", amountError ? "text-danger" : "text-muted")}>
+                  {amountError ?? (amount && amount < selectedTotal ? `Part payment · ${formatMoney(selectedTotal - amount)} will still be due` : `Clears all ${selected.length} selected due${selected.length === 1 ? "" : "s"}`)}
+                </p>
+                {chips.length > 1 && (
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {chips.map((c) => {
+                      const on = amount === c.value;
+                      return (
+                        <button
+                          key={c.label}
+                          type="button"
+                          onClick={() => setAmountText(moneyInput(c.value))}
+                          aria-pressed={on}
+                          className={cx("rounded-full border px-3 py-1 text-xs font-medium transition-colors", on ? "border-accent bg-accent text-accent-foreground" : "border-border hover:bg-surface-muted")}
+                        >
+                          {c.label} · {formatMoney(c.value)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* How */}
+              <div>
+                <p className="mb-2 text-sm font-medium">Paid by</p>
+                <div className="flex flex-wrap gap-2">
+                  {PAYMENT_MODES.map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      aria-pressed={mode === m}
+                      onClick={() => setMode(m)}
+                      className={cx(
+                        "h-10 rounded-full border px-4 text-sm font-medium transition-colors",
+                        mode === m ? "border-accent bg-accent-soft text-accent" : "border-border bg-surface hover:bg-surface-muted"
+                      )}
+                    >
+                      {MODE_LABEL[m]}
+                    </button>
+                  ))}
+                </div>
+                {MODE_REFERENCE[mode] && (
+                  <div className="mt-3">
+                    <Field label={MODE_REFERENCE[mode]} htmlFor="pay-ref" hint="Optional, printed on the receipt">
+                      <Input id="pay-ref" value={reference} onChange={(e) => setReference(e.target.value)} autoComplete="off" />
+                    </Field>
+                  </div>
+                )}
+              </div>
+
+              {/* Where it goes */}
+              <Section title="Goes to (oldest first)">
                 <ul className="divide-y divide-border rounded-xl border border-border bg-surface">
                   {open.map((d) => {
                     const checked = !deselected.has(d.id);
@@ -327,8 +417,10 @@ function CollectForm({
                           </span>
                           <span className="text-right">
                             <span className="block font-medium tabular-nums">{formatMoney(d.balance)}</span>
-                            {checked && applied > 0 && applied < d.balance && (
-                              <span className="block text-xs text-accent">paying {formatMoney(applied)}</span>
+                            {checked && (
+                              <span className={cx("block text-xs", applied === d.balance ? "text-success" : applied > 0 ? "text-accent" : "text-muted")}>
+                                {applied === d.balance ? "cleared" : applied > 0 ? `paying ${formatMoney(applied)}` : "not covered"}
+                              </span>
                             )}
                           </span>
                         </label>
@@ -338,53 +430,28 @@ function CollectForm({
                 </ul>
               </Section>
 
-              <Section title="Payment">
-                <div className="space-y-4">
-                  <Field
-                    label="Amount"
-                    htmlFor="pay-amount"
-                    error={amountError ?? undefined}
-                    hint={amount && amount < selectedTotal ? "Part payment: applied to the oldest selected dues first." : undefined}
-                  >
-                    <MoneyInput id="pay-amount" value={amountValue} onChange={setAmountText} invalid={Boolean(amountError)} />
-                  </Field>
-
-                  <div>
-                    <p className="mb-1.5 text-sm font-medium">Mode</p>
-                    <div className="grid grid-cols-3 gap-2">
-                      {PAYMENT_MODES.map((m) => (
-                        <button
-                          key={m}
-                          type="button"
-                          aria-pressed={mode === m}
-                          onClick={() => setMode(m)}
-                          className={cx(
-                            "h-10 rounded-lg border text-sm font-medium transition-colors",
-                            mode === m ? "border-accent bg-accent-soft text-accent" : "border-border bg-surface hover:bg-surface-muted"
-                          )}
-                        >
-                          {MODE_LABEL[m]}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {MODE_REFERENCE[mode] && (
-                      <Field label={MODE_REFERENCE[mode]} htmlFor="pay-ref">
-                        <Input id="pay-ref" value={reference} onChange={(e) => setReference(e.target.value)} autoComplete="off" />
-                      </Field>
-                    )}
+              {/* Rarely changed */}
+              <div>
+                <button type="button" onClick={() => setMoreOpen((v) => !v)} className="flex items-center gap-1.5 text-sm font-medium text-muted hover:text-foreground">
+                  <Icon d={ICONS.chevronRight} className={cx("transition-transform", moreOpen && "rotate-90")} />
+                  More options
+                  <span className="font-normal">
+                    · {date === today ? "today" : formatDay(date, "short")}
+                    {note.trim() && " · note added"}
+                  </span>
+                </button>
+                {moreOpen && (
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
                     <Field label="Date received" htmlFor="pay-date">
                       <Input id="pay-date" type="date" value={date} max={today} onChange={(e) => e.target.value && setDate(e.target.value)} />
                     </Field>
+                    <Field label="Note" htmlFor="pay-note" hint="Printed on the receipt">
+                      <Input id="pay-note" value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} />
+                    </Field>
                   </div>
-                  <Field label="Note" htmlFor="pay-note" hint="Optional, printed on the receipt">
-                    <Input id="pay-note" value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} />
-                  </Field>
-                </div>
-              </Section>
-            </>
+                )}
+              </div>
+            </form>
           )}
         </>
       )}

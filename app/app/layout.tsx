@@ -6,12 +6,14 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { CommandPalette, openPalette, type PaletteItem } from "@/components/command-palette";
 import { Drawer } from "@/components/data";
+import { PlanBanners, useTenantStatus } from "@/components/plan-banner";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge, Button, ICONS, Icon, Logo, Spinner, cx } from "@/components/ui";
 import { api } from "@/lib/api";
-import { useAuth } from "@/lib/auth";
+import { schoolOpened, useAuth } from "@/lib/auth";
 import { NAV_ICONS, NOTICES_CHANGED_EVENT } from "@/lib/classroom";
 import { flushPending } from "@/lib/offline-attendance";
+import type { Feature } from "@/lib/platform";
 
 type NavGroup = "Overview" | "Academics" | "Communication" | "Finance" | "Admin";
 
@@ -21,6 +23,8 @@ interface NavItem {
   icon: string;
   group: NavGroup;
   roles?: string[];
+  /** Hidden when the school's plan doesn't include it */
+  feature?: Feature;
 }
 
 const TEACHING = ["owner", "admin", "teacher"];
@@ -36,11 +40,11 @@ const NAV: NavItem[] = [
   { href: "/app/students", label: "Students", icon: ICONS.users, group: "Academics" },
   // Attendance is for teaching staff; accountants only handle fees
   { href: "/app/attendance", label: "Attendance", icon: ICONS.calendarCheck, group: "Academics", roles: TEACHING },
-  { href: "/app/homework", label: "Homework", icon: NAV_ICONS.homework, group: "Academics", roles: TEACHING },
+  { href: "/app/homework", label: "Homework", icon: NAV_ICONS.homework, group: "Academics", roles: TEACHING, feature: "homework" },
   { href: "/app/exams", label: "Tests", icon: "M9 4h6M8 4H6v16h12V4h-2M9 10h6M9 14h6M9 18h3", group: "Academics", roles: TEACHING },
   // Rankings combine tests and attendance, so the same roles as both
-  { href: "/app/performance", label: "Performance", icon: "M8 21h8M12 17v4M7 4h10v5a5 5 0 01-10 0V4zM17 5h3v2a3 3 0 01-3 3M7 5H4v2a3 3 0 003 3", group: "Academics", roles: TEACHING },
-  { href: "/app/timetable", label: "Timetable", icon: NAV_ICONS.timetable, group: "Academics", roles: TEACHING },
+  { href: "/app/performance", label: "Performance", icon: "M8 21h8M12 17v4M7 4h10v5a5 5 0 01-10 0V4zM17 5h3v2a3 3 0 01-3 3M7 5H4v2a3 3 0 003 3", group: "Academics", roles: TEACHING, feature: "performance" },
+  { href: "/app/timetable", label: "Timetable", icon: NAV_ICONS.timetable, group: "Academics", roles: TEACHING, feature: "timetable" },
   { href: "/app/notices", label: "Notices", icon: NAV_ICONS.notices, group: "Communication" },
   // Teachers don't handle money
   { href: "/app/fees", label: "Fees", icon: "M7 4h10M7 8h10M7 4c4 0 6 2 6 4s-2 4-6 4l7 8", group: "Finance", roles: ["owner", "admin", "accountant"] },
@@ -61,9 +65,9 @@ const MOBILE_PRIORITY: Record<string, string[]> = {
 };
 
 /** Quick actions offered in the command palette. */
-const ACTIONS: (Omit<PaletteItem, "group"> & { roles?: string[] })[] = [
+const ACTIONS: (Omit<PaletteItem, "group"> & { roles?: string[]; feature?: Feature })[] = [
   { id: "a:attendance", label: "Mark attendance", hint: "Open today's register", icon: ICONS.calendarCheck, href: "/app/attendance", roles: TEACHING },
-  { id: "a:homework", label: "Give homework", hint: "Post to a class and send to parents", icon: NAV_ICONS.homework, href: "/app/homework?new=1", roles: TEACHING },
+  { id: "a:homework", label: "Give homework", hint: "Post to a class and send to parents", icon: NAV_ICONS.homework, href: "/app/homework?new=1", roles: TEACHING, feature: "homework" },
   { id: "a:notice", label: "Post a notice", hint: "To staff or parents", icon: NAV_ICONS.notices, href: "/app/notices?new=1", roles: TEACHING },
   { id: "a:fee", label: "Collect fee", hint: "Record a payment and print a receipt", icon: "M7 4h10M7 8h10M7 4c4 0 6 2 6 4s-2 4-6 4l7 8", href: "/app/fees", roles: ["owner", "admin", "accountant"] },
   { id: "a:student", label: "Add student", icon: ICONS.plus, href: "/app/students", roles: ["owner", "admin"] },
@@ -139,7 +143,13 @@ export default function AppLayout({ children }: LayoutProps<"/app">) {
   const { session, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const collapsed = useCollapsed();
+  const tenantStatus = useTenantStatus();
   const unread = useUnreadNotices(session.status === "authenticated" && Boolean(session.tenant));
+
+  // A super admin entering from the console has arrived
+  useEffect(() => {
+    if (session.status === "authenticated" && session.impersonating) schoolOpened();
+  }, [session]);
 
   // Attendance saved offline goes out as soon as there's a connection
   useEffect(() => {
@@ -184,13 +194,14 @@ export default function AppLayout({ children }: LayoutProps<"/app">) {
     .map((p) => p[0]?.toUpperCase())
     .join("");
 
-  const nav = NAV.filter((item) => !item.roles || item.roles.includes(session.role ?? ""));
+  const features = tenantStatus?.subscription.features;
+  const nav = NAV.filter((item) => (!item.roles || item.roles.includes(session.role ?? "")) && (!item.feature || !features || features[item.feature]));
   const isActive = (href: string) => pathname.startsWith(href);
   const priority = MOBILE_PRIORITY[session.role ?? ""] ?? MOBILE_PRIORITY.owner;
   const tabs = nav.length <= MAX_TABS ? nav : priority.map((href) => nav.find((i) => i.href === href)).filter((i): i is NavItem => Boolean(i)).slice(0, MAX_TABS - 1);
   const current = nav.find((i) => isActive(i.href));
   const pages: PaletteItem[] = nav.map((i) => ({ id: `p:${i.href}`, label: i.label, hint: i.group, icon: i.icon, href: i.href, group: "Pages" }));
-  const actions: PaletteItem[] = ACTIONS.filter((a) => !a.roles || a.roles.includes(session.role ?? "")).map((a) => ({ ...a, group: "Actions" }));
+  const actions: PaletteItem[] = ACTIONS.filter((a) => (!a.roles || a.roles.includes(session.role ?? "")) && (!a.feature || !features || features[a.feature])).map((a) => ({ ...a, group: "Actions" }));
   // Everything else lives under "More" (in menu order)
   const more = nav.filter((i) => !tabs.includes(i));
   const moreActive = more.some((i) => isActive(i.href));
@@ -350,7 +361,21 @@ export default function AppLayout({ children }: LayoutProps<"/app">) {
         </header>
 
         <main className="app-canvas min-w-0 flex-1 px-4 pb-[calc(var(--bottom-nav-h)+1.5rem)] pt-6 sm:px-8 sm:pt-8 md:pb-10">
-          <div className="mx-auto max-w-6xl">{children}</div>
+          <div className="mx-auto max-w-6xl">
+            {session.impersonating && (
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-warning/40 bg-warning-soft px-4 py-2.5 text-sm">
+                <span>
+                  <strong>Super admin view.</strong> You&apos;re inside {session.tenant.name} as its owner; everything you do is logged.
+                </span>
+                {/* The console switches back to the super admin session when it opens */}
+                <Button size="sm" variant="secondary" onClick={() => router.push("/console?tab=schools")}>
+                  Back to console
+                </Button>
+              </div>
+            )}
+            <PlanBanners canManage={session.role === "owner" || session.role === "admin"} />
+            {children}
+          </div>
         </main>
       </div>
 

@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { Drawer, Section, errorMessage, useResource } from "@/components/data";
-import { Alert, Badge, Button, Field, ICONS, Icon, Input, Select, Skeleton, cx } from "@/components/ui";
+import { Drawer, errorMessage, useResource } from "@/components/data";
+import { Alert, Badge, Button, Field, ICONS, Icon, Select, Skeleton, cx } from "@/components/ui";
 import { api } from "@/lib/api";
 import { className, formatDay, localToday, type ClassSummary } from "@/lib/attendance";
-import { formatMoney, parseMoney, type FeePlan } from "@/lib/fees";
+import { concessionDiscount, concessionShort, formatMoney, parseMoney, type Concession, type FeePlan } from "@/lib/fees";
 import { MoneyInput } from "./collect-drawer";
+import { presetToConcession, usePresets } from "./concession";
 import { PlanEditor } from "./plan-editor";
 
 export function Plans({ onChanged }: { onChanged: () => void }) {
@@ -28,10 +29,16 @@ export function Plans({ onChanged }: { onChanged: () => void }) {
   }
 
   async function remove(plan: FeePlan) {
-    if (!confirm(`Delete “${plan.name}”?`)) return;
+    const n = plan.stats?.students ?? 0;
+    const warning = n
+      ? `Delete “${plan.name}”?\n\nIt's assigned to ${n} student${n === 1 ? "" : "s"}. Their dues for this plan will be deleted too. Nothing has been collected on it. This can't be undone.`
+      : `Delete “${plan.name}”?`;
+    if (!confirm(warning)) return;
     try {
-      await api(`/api/fees/plans/${plan.id}`, { method: "DELETE" });
+      const res = await api<{ duesDeleted: number }>(`/api/fees/plans/${plan.id}`, { method: "DELETE" });
+      setMessage({ tone: "success", text: `“${plan.name}” deleted${res.duesDeleted ? ` with ${res.duesDeleted} unpaid due${res.duesDeleted === 1 ? "" : "s"}` : ""}.` });
       list.reload();
+      onChanged();
     } catch (err) {
       setMessage({ tone: "danger", text: errorMessage(err) });
     }
@@ -123,6 +130,18 @@ export function Plans({ onChanged }: { onChanged: () => void }) {
                     <p className="text-muted">Not assigned to anyone yet</p>
                   )}
                 </div>
+                {Boolean(p.stats?.students && p.stats.missing) && (
+                  <button
+                    onClick={() => setAssigning(p)}
+                    className="mt-3 flex w-full items-center gap-2 rounded-lg border border-warning/40 bg-warning-soft px-3 py-2 text-left text-xs transition-colors hover:border-warning"
+                  >
+                    <span className="size-2 shrink-0 rounded-full bg-warning" />
+                    <span className="flex-1">
+                      <span className="font-semibold">{p.stats!.missing} new student{p.stats!.missing === 1 ? "" : "s"}</span> in Class {p.grade} {p.stats!.missing === 1 ? "doesn't" : "don't"} have this plan yet
+                    </span>
+                    <span className="font-semibold text-accent">Assign →</span>
+                  </button>
+                )}
                 <div className="mt-auto flex flex-wrap gap-2 pt-4">
                   {!p.archived && (
                     <Button size="sm" onClick={() => setAssigning(p)}>
@@ -136,7 +155,9 @@ export function Plans({ onChanged }: { onChanged: () => void }) {
                     <Button size="sm" variant="ghost" onClick={() => setArchived(p, !p.archived)}>
                       {p.archived ? "Restore" : "Archive"}
                     </Button>
-                  ) : (
+                  ) : null}
+                  {/* Nothing collected yet (e.g. a demo plan): it can go, dues and all */}
+                  {!p.stats?.paid && (
                     <Button size="sm" variant="ghost" className="text-danger" onClick={() => remove(p)}>
                       Delete
                     </Button>
@@ -177,39 +198,87 @@ export function Plans({ onChanged }: { onChanged: () => void }) {
   );
 }
 
+type Choice = "saved" | "none" | "custom-pays" | "custom-off" | `preset:${string}`;
+
+interface PreviewStudent {
+  id: string;
+  fullName: string;
+  admissionNo: string;
+  rollNo: string;
+  section: string;
+  concession: Concession | null;
+  assigned: boolean;
+}
+
+/**
+ * Pick a class, then see every student with what they'll pay. Saved concessions are filled
+ * in; any student can be changed with one dropdown (or everyone at once).
+ */
 function AssignDrawer({ plan, onClose, onAssigned }: { plan: FeePlan; onClose: () => void; onAssigned: (message: string) => void }) {
   const classes = useResource(() => api<{ classes: ClassSummary[] }>(`/api/attendance/classes?date=${localToday()}`), "classes");
   const grades = [...new Set(classes.data?.classes.map((c) => c.grade))];
+  const presets = usePresets();
   const [grade, setGrade] = useState(plan.grade);
   const [section, setSection] = useState("");
   const sections = classes.data?.classes.filter((c) => c.grade === grade) ?? [];
-  const studentCount = section ? sections.find((c) => c.section === section)?.students ?? 0 : sections.reduce((t, c) => t + c.students, 0);
-
-  const [concessionType, setConcessionType] = useState<"none" | "percent" | "amount">("none");
-  const [concessionValue, setConcessionValue] = useState("");
-  const [reason, setReason] = useState("");
+  const [choices, setChoices] = useState<Record<string, Choice>>({});
+  // Typed amounts for "Custom amount" choices, as rupees text
+  const [customs, setCustoms] = useState<Record<string, string>>({});
+  const [showAssigned, setShowAssigned] = useState(false);
+  const [remember, setRemember] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const value = concessionType === "percent" ? Number(concessionValue) : concessionType === "amount" ? parseMoney(concessionValue) : 0;
-  const invalid = concessionType !== "none" && (value === null || Number.isNaN(value) || value < 0 || (concessionType === "percent" && (value ?? 0) > 100));
+  const previewPath = grade ? `/api/fees/plans/${plan.id}/preview?grade=${encodeURIComponent(grade)}${section ? `&section=${encodeURIComponent(section)}` : ""}` : null;
+  const preview = useResource(
+    () => (previewPath ? api<{ installments: { label: string; amount: number }[]; students: PreviewStudent[] }>(previewPath) : Promise.resolve({ installments: [], students: [] as PreviewStudent[] })),
+    previewPath ?? "none"
+  );
+  const students = preview.data?.students ?? [];
+  const fresh = students.filter((st) => !st.assigned);
+  const presetList = presets.data?.presets ?? [];
+
+  const choiceOf = (st: PreviewStudent): Choice => choices[st.id] ?? (st.concession ? "saved" : "none");
+  const concessionFor = (st: PreviewStudent): Concession | null => {
+    const c = choiceOf(st);
+    if (c === "saved") return st.concession;
+    if (c === "none") return null;
+    if (c === "custom-pays" || c === "custom-off") {
+      const v = parseMoney(customs[st.id] ?? "");
+      if (v === null || (c === "custom-off" && v === 0)) return null;
+      return { type: c === "custom-pays" ? "fixed" : "amount", value: v, reason: "Custom" };
+    }
+    const p = presetList.find((x) => `preset:${x.id ?? x.name}` === c);
+    return p ? presetToConcession(p) : null;
+  };
+  const perInstallment = plan.installments.map((i) => i.items.reduce((t, it) => t + it.amount, 0));
+  const yearly = (c: Concession | null) => perInstallment.reduce((t, a) => t + a - concessionDiscount(a, c), 0);
+  const total = fresh.reduce((t, st) => t + yearly(concessionFor(st)), 0);
+  const withConcession = fresh.filter((st) => concessionFor(st)).length;
+  // A "Custom" choice without a valid amount would quietly charge the full fee
+  const missingCustom = fresh.filter((st) => (choiceOf(st) === "custom-pays" || choiceOf(st) === "custom-off") && !concessionFor(st)).length;
+
+  function setAll(c: Choice | "") {
+    if (!c) return;
+    setChoices(Object.fromEntries(fresh.map((st) => [st.id, c === "saved" && !st.concession ? "none" : c])));
+  }
 
   async function assign() {
     setBusy(true);
     setError(null);
     try {
+      // Only students whose choice differs from what's saved on them
+      const concessions = fresh
+        .filter((st) => choices[st.id] && choices[st.id] !== "saved" && !(choices[st.id] === "none" && !st.concession))
+        .map((st) => ({ studentId: st.id, concession: concessionFor(st) }));
       const res = await api<{ students: number; created: number; skipped: number }>(`/api/fees/plans/${plan.id}/assign`, {
         method: "POST",
-        body: {
-          grade,
-          ...(section ? { section } : {}),
-          ...(concessionType !== "none" && value ? { concession: { type: concessionType, value, reason: reason.trim() } } : {}),
-        },
+        body: { grade, ...(section ? { section } : {}), concessions, remember },
       });
       onAssigned(
         res.created === 0
           ? `Everyone in Class ${className(grade, section)} already had “${plan.name}”. Nothing new to add.`
-          : `“${plan.name}” assigned: ${res.created} dues created for ${res.students} students${res.skipped ? ` (${res.skipped} already existed)` : ""}.`
+          : `“${plan.name}” assigned to ${res.created / Math.max(1, plan.installments.length)} students${withConcession ? `, ${withConcession} with concessions` : ""}.${res.skipped ? ` ${res.skipped / Math.max(1, plan.installments.length)} already had it.` : ""}`
       );
     } catch (err) {
       setError(errorMessage(err));
@@ -222,81 +291,154 @@ function AssignDrawer({ plan, onClose, onAssigned }: { plan: FeePlan; onClose: (
     <Drawer
       title={`Assign ${plan.name}`}
       onClose={onClose}
+      size="lg"
       footer={
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-muted">
-            {grade ? `${studentCount} students × ${plan.installments.length} installments` : "Choose a class"}
+            {grade && preview.data ? (
+              <>
+                <span className="font-semibold text-foreground">{fresh.length}</span> student{fresh.length === 1 ? "" : "s"} · <span className="font-semibold text-foreground">{formatMoney(total)}</span>
+                {withConcession > 0 && <span className="text-success"> · {withConcession} with concession</span>}
+              </>
+            ) : (
+              "Choose a class"
+            )}
           </p>
-          <Button onClick={assign} loading={busy} disabled={!grade || studentCount === 0 || invalid}>
-            Assign
+          {missingCustom > 0 && <span className="text-xs text-danger">Enter the custom amount for {missingCustom} student{missingCustom === 1 ? "" : "s"}</span>}
+          <Button onClick={assign} loading={busy} disabled={!grade || fresh.length === 0 || missingCustom > 0} className="w-full sm:w-auto">
+            Assign to {fresh.length} student{fresh.length === 1 ? "" : "s"}
           </Button>
         </div>
       }
     >
       {error && <Alert>{error}</Alert>}
-      <p className="text-sm text-muted">
-        Each active student in the class gets this plan&apos;s {plan.installments.length} installments ({formatMoney(plan.total)} in total). Students
-        who already have it are skipped, so it&apos;s safe to run again after admitting new students.
-      </p>
-      <Section title="Students">
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Class" htmlFor="as-grade">
-            <Select id="as-grade" value={grade} onChange={(e) => { setGrade(e.target.value); setSection(""); }}>
-              <option value="">Choose…</option>
-              {grades.map((g) => (
-                <option key={g} value={g}>
-                  Class {g}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Section" htmlFor="as-section">
-            <Select id="as-section" value={section} onChange={(e) => setSection(e.target.value)} disabled={!grade}>
-              <option value="">All sections</option>
-              {sections.filter((c) => c.section).map((c) => (
-                <option key={c.section} value={c.section}>
-                  {c.section} ({c.students})
-                </option>
-              ))}
-            </Select>
-          </Field>
-        </div>
-      </Section>
-      <Section title="Concession (optional)">
-        <div className="grid grid-cols-3 gap-2">
-          {(
-            [
-              ["none", "None"],
-              ["percent", "% off"],
-              ["amount", "₹ off each"],
-            ] as const
-          ).map(([v, label]) => (
-            <button
-              key={v}
-              onClick={() => setConcessionType(v)}
-              aria-pressed={concessionType === v}
-              className={cx("h-10 rounded-lg border text-sm font-medium", concessionType === v ? "border-accent bg-accent-soft text-accent" : "border-border bg-surface hover:bg-surface-muted")}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        {concessionType !== "none" && (
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <Field label={concessionType === "percent" ? "Percent" : "Amount off each installment"} htmlFor="as-value" error={invalid ? "Enter a valid value" : undefined}>
-              {concessionType === "percent" ? (
-                <Input id="as-value" inputMode="decimal" value={concessionValue} onChange={(e) => setConcessionValue(e.target.value)} placeholder="e.g. 10" />
-              ) : (
-                <MoneyInput id="as-value" value={concessionValue} onChange={setConcessionValue} />
-              )}
-            </Field>
-            <Field label="Reason" htmlFor="as-reason">
-              <Input id="as-reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Staff ward" />
-            </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Class" htmlFor="as-grade">
+          <Select id="as-grade" value={grade} onChange={(e) => { setGrade(e.target.value); setSection(""); setChoices({}); }}>
+            <option value="">Choose…</option>
+            {grades.map((g) => (
+              <option key={g} value={g}>
+                Class {g}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Section" htmlFor="as-section">
+          <Select id="as-section" value={section} onChange={(e) => { setSection(e.target.value); setChoices({}); }} disabled={!grade}>
+            <option value="">All sections</option>
+            {sections.filter((c) => c.section).map((c) => (
+              <option key={c.section} value={c.section}>
+                {c.section} ({c.students})
+              </option>
+            ))}
+          </Select>
+        </Field>
+      </div>
+
+      {grade && (
+        <section>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-sm font-semibold">Who pays what</p>
+              <p className="text-xs text-muted">
+                Full fee {formatMoney(plan.total)} · {plan.installments.length} installment{plan.installments.length === 1 ? "" : "s"}. Saved concessions are already filled in.
+              </p>
+            </div>
+            {fresh.length > 1 && (
+              <Select aria-label="Set everyone's concession" value="" onChange={(e) => setAll(e.target.value as Choice)} className="h-10 w-full text-sm sm:h-9 sm:w-48">
+                <option value="">Set everyone to…</option>
+                <option value="saved">Their saved concession</option>
+                <option value="none">No concession</option>
+                {presetList.map((p) => (
+                  <option key={p.id ?? p.name} value={`preset:${p.id ?? p.name}`}>
+                    {p.name} · {concessionShort(p)}
+                  </option>
+                ))}
+              </Select>
+            )}
           </div>
-        )}
-        <p className="mt-2 text-xs text-muted">For one student&apos;s concession, assign first and then edit their due from their fee account.</p>
-      </Section>
+
+          {!preview.data ? (
+            <Skeleton className="h-48 rounded-xl" />
+          ) : students.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted">No active students in this class.</p>
+          ) : (
+            <ul className="divide-y divide-border rounded-xl border border-border bg-surface">
+              {/* New students first; those who already have the plan fold away */}
+              {[...fresh, ...(showAssigned ? students.filter((x) => x.assigned) : [])].map((st) => {
+                const c = concessionFor(st);
+                const pays = yearly(c);
+                return (
+                  // Phones: name + price on top, the dropdown full width below. Wider screens: one line.
+                  <li key={st.id} className={cx("grid grid-cols-[1.75rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 px-3 py-2.5 sm:flex sm:py-2", st.assigned && "opacity-50")}>
+                    <span className="shrink-0 text-right font-mono text-xs text-muted sm:w-7">{st.rollNo || "–"}</span>
+                    <span className="min-w-0 sm:flex-1">
+                      <span className="block truncate text-sm font-medium">{st.fullName}</span>
+                      <span className="block truncate text-xs text-muted">
+                        {st.section && `${grade}-${st.section} · `}
+                        {st.assigned ? "Already has this plan" : st.concession ? `Saved: ${st.concession.label}` : st.admissionNo}
+                      </span>
+                    </span>
+                    {!st.assigned && (
+                      <>
+                        <span className="shrink-0 text-right text-sm tabular-nums sm:order-last sm:w-24">
+                          {c && <span className="block text-[11px] text-muted line-through">{formatMoney(plan.total)}</span>}
+                          <span className={cx("font-semibold", c && "text-success")}>{formatMoney(pays)}</span>
+                        </span>
+                        <div className="col-span-3 flex gap-2 pl-[calc(1.75rem+0.75rem)] sm:col-span-1 sm:pl-0">
+                          <Select
+                            aria-label={`Concession for ${st.fullName}`}
+                            value={choiceOf(st)}
+                            onChange={(e) => setChoices((m) => ({ ...m, [st.id]: e.target.value as Choice }))}
+                            className={cx("h-10 min-w-0 flex-1 text-sm sm:h-9 sm:w-44 sm:flex-none", c && "border-success/50 text-success")}
+                          >
+                            {st.concession && <option value="saved">{st.concession.reason || "Saved"} · {concessionShort(st.concession)}</option>}
+                            <option value="none">No concession</option>
+                            {presetList.map((p) => (
+                              <option key={p.id ?? p.name} value={`preset:${p.id ?? p.name}`}>
+                                {p.name} · {concessionShort(p)}
+                              </option>
+                            ))}
+                            <option value="custom-pays">Custom: pays ₹…</option>
+                            <option value="custom-off">Custom: ₹ … off</option>
+                          </Select>
+                          {(choiceOf(st) === "custom-pays" || choiceOf(st) === "custom-off") && (
+                            <div className="w-28 shrink-0">
+                              <MoneyInput
+                                id={`custom-${st.id}`}
+                                value={customs[st.id] ?? ""}
+                                onChange={(v) => setCustoms((m) => ({ ...m, [st.id]: v }))}
+                                invalid={Boolean(customs[st.id]) && !c}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </li>
+                );
+              })}
+              {students.some((x) => x.assigned) && (
+                <li>
+                  <button onClick={() => setShowAssigned((v) => !v)} className="w-full px-3 py-2.5 text-left text-xs font-medium text-muted hover:bg-surface-muted">
+                    {showAssigned ? "Hide" : "Show"} {students.filter((x) => x.assigned).length} student{students.filter((x) => x.assigned).length === 1 ? "" : "s"} who already have this plan
+                  </button>
+                </li>
+              )}
+            </ul>
+          )}
+          {Object.keys(choices).length > 0 && (
+            <label className="mt-3 flex items-start gap-3 text-sm">
+              <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} className="mt-0.5 size-4 accent-[var(--accent)]" />
+              <span>
+                Remember these concessions for future plans
+                <span className="block text-xs text-muted">Saved on each student; you can change it from their fee account anytime.</span>
+              </span>
+            </label>
+          )}
+          <p className="mt-3 text-xs text-muted">New students joining later? Open Assign again: only those without this plan are added. Custom amounts can be changed later from the student&apos;s fee account → Concession.</p>
+        </section>
+      )}
     </Drawer>
   );
 }

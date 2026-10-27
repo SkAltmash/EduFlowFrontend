@@ -6,6 +6,7 @@ import { ICONS, Icon, cx } from "@/components/ui";
 import { WA_ICON } from "@/components/whatsapp-send";
 import { useAuth } from "@/lib/auth";
 import { AccountSettings } from "./_components/account";
+import { BillingSettings } from "./_components/billing";
 import { ClassesSettings } from "./_components/classes";
 import { GradingCard } from "./_components/grading";
 import { ProfileSettings } from "./_components/profile";
@@ -60,6 +61,14 @@ const TABS: Tab[] = [
         <MessageHistory />
       </div>
     ),
+  },
+  {
+    id: "billing",
+    label: "Plan & billing",
+    hint: "Your EduFlow plan",
+    icon: "M3 7h18v10H3zM3 11h18M7 15h3",
+    adminOnly: true,
+    render: () => <BillingSettings />,
   },
   { id: "grading", label: "Grading", hint: "Grades and pass marks", icon: "M4 20h16M6 16l4-11 4 11M7.5 12h5M18 7v6M15 10h6", adminOnly: true, render: () => <GradingCard /> },
   { id: "account", label: "My account", hint: "Name, password, theme", icon: "M12 12a4 4 0 100-8 4 4 0 000 8zM4 21a8 8 0 0116 0", render: () => <AccountSettings /> },

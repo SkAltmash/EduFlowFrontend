@@ -10,7 +10,10 @@ import { useAuth } from "@/lib/auth";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { session, login, selectTenant } = useAuth();
+  const { session, login, selectTenant, completeTwoFactor } = useAuth();
+  // Super admins with two-step login: the 6-digit code from their authenticator app
+  const [twoFactorToken, setTwoFactorToken] = useState<string | null>(null);
+  const [code, setCode] = useState("");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -43,6 +46,8 @@ export default function LoginPage() {
       const result = await login(email, password);
       if (result.requiresTenantSelection) {
         setChoice({ tenants: result.tenants, token: result.selectionToken });
+      } else if (result.requiresTwoFactor) {
+        setTwoFactorToken(result.twoFactorToken);
       }
     } catch (err) {
       showError(err);
@@ -68,6 +73,56 @@ export default function LoginPage() {
     } finally {
       setSelecting(null);
     }
+  }
+
+  async function onCode(e: React.FormEvent) {
+    e.preventDefault();
+    if (!twoFactorToken) return;
+    setPending(true);
+    setError(null);
+    try {
+      await completeTwoFactor(twoFactorToken, code);
+    } catch (err) {
+      if (err instanceof ApiError && err.code === "TWO_FACTOR_EXPIRED") {
+        setTwoFactorToken(null);
+        setCode("");
+      }
+      setError(err instanceof ApiError ? err.message : "Something went wrong. Please try again.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  if (twoFactorToken) {
+    return (
+      <AuthShell
+        title="Two-step verification"
+        subtitle="Enter the 6-digit code from your authenticator app."
+        footer={
+          <button className="font-medium text-accent hover:underline" onClick={() => { setTwoFactorToken(null); setCode(""); setError(null); }}>
+            Use a different account
+          </button>
+        }
+      >
+        <form onSubmit={onCode} className="space-y-5" noValidate>
+          {error && <Alert>{error}</Alert>}
+          <input
+            autoFocus
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            aria-label="6-digit code"
+            maxLength={6}
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            placeholder="000000"
+            className="h-14 w-full rounded-xl border border-border bg-surface text-center font-mono text-3xl tracking-[0.5em] outline-none focus:border-accent focus:ring-4 focus:ring-accent/15"
+          />
+          <Button type="submit" className="h-11 w-full rounded-xl text-[15px]" loading={pending} disabled={code.length !== 6}>
+            Verify
+          </Button>
+        </form>
+      </AuthShell>
+    );
   }
 
   if (choice) {
