@@ -17,6 +17,7 @@ import {
   type Register as RegisterData,
 } from "@/lib/attendance";
 import { StatusBar } from "./class-grid";
+import { isOffline, queueRegister } from "@/lib/offline-attendance";
 
 type Mark = { status: AttendanceStatus; note: string };
 
@@ -105,7 +106,8 @@ export function Register({ date, grade, section, onBack, onDirtyChange, onSaved 
     setMessage(null);
     setEdits((e) => {
       const next = { ...e };
-      for (const s of data?.students ?? []) if (!(next[s.id] ?? saved[s.id])) next[s.id] = { status: "present", note: "" };
+      // Students with leave recorded in advance get "Leave" (with its reason) instead
+      for (const s of data?.students ?? []) if (!(next[s.id] ?? saved[s.id])) next[s.id] = s.leave ? { status: "leave", note: s.leave.reason } : { status: "present", note: "" };
       return next;
     });
   }
@@ -130,7 +132,13 @@ export function Register({ date, grade, section, onBack, onDirtyChange, onSaved 
       setMessage({ tone: "success", text: `Attendance saved for ${res.summary.marked} of ${res.summary.total} students.` });
       onSaved();
     } catch (err) {
-      setMessage({ tone: "danger", text: errorMessage(err) });
+      if (isOffline(err)) {
+        // No signal: keep it on this phone and send it when the connection is back
+        queueRegister({ date, grade, section, entries: changed.map(([studentId, m]) => ({ studentId, status: m.status, note: m.note.trim() })) });
+        setMessage({ tone: "success", text: "No internet right now. Attendance is saved on this device and will be sent automatically when you're back online." });
+      } else {
+        setMessage({ tone: "danger", text: errorMessage(err) });
+      }
     } finally {
       setSaving(false);
     }
@@ -301,6 +309,11 @@ export function Register({ date, grade, section, onBack, onDirtyChange, onSaved 
                             <p className="flex items-center gap-2 truncate font-medium">
                               {s.fullName}
                               {!s.current && <Badge>moved / left</Badge>}
+                              {s.leave && (
+                                <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-medium text-accent" title={s.leave.reason || undefined}>
+                                  On leave{s.leave.reason ? ` · ${s.leave.reason}` : ""}
+                                </span>
+                              )}
                             </p>
                             <p className="truncate font-mono text-xs text-muted">{s.admissionNo}</p>
                           </div>

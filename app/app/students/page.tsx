@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Drawer, Pager, query, useDebounced, useResource, type Pagination } from "@/components/data";
 import { Button, ICONS, Icon, Select, cx } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -10,6 +11,8 @@ import { Avatar, STATUS_LABEL, Skeleton, StatusBadge, classLabel } from "./_comp
 import { ExportDrawer } from "./_components/export-drawer";
 import { ImportDrawer } from "./_components/import-drawer";
 import { StudentDrawer } from "./_components/student-drawer";
+import { loadMyClasses } from "@/lib/teaching";
+import { CorrectionsDrawer } from "./_components/corrections";
 
 const SORTS = [
   ["newest", "Newest first"],
@@ -22,22 +25,57 @@ const SORTS = [
 type StatusFilter = StudentStatus | "all";
 
 export default function StudentsPage() {
+  // useSearchParams needs a Suspense boundary; the page itself renders on the client
+  return (
+    <Suspense fallback={null}>
+      <StudentsView />
+    </Suspense>
+  );
+}
+
+function StudentsView() {
+  const params = useSearchParams();
+  const router = useRouter();
   const { session } = useAuth();
   const role = session.status === "authenticated" ? session.role : undefined;
   const canManage = role === "owner" || role === "admin";
+  // Teachers need their class list, not the records office: no status tiles or admission sorting
+  const isTeacher = role === "teacher";
+  const my = useResource(loadMyClasses, "my-classes");
+  const [scoped, setScoped] = useState(false);
 
   const [search, setSearch] = useState("");
   const [grade, setGrade] = useState("");
   const [section, setSection] = useState("");
   const [status, setStatus] = useState<StatusFilter>("active");
-  const [sort, setSort] = useState("newest");
+  const [sort, setSort] = useState(isTeacher ? "grade" : "newest");
   const [page, setPage] = useState(1);
   // undefined = closed, null = new student, string = existing student id
-  const [openId, setOpenId] = useState<string | null | undefined>(undefined);
+  // ?student=<id> (from search) opens that student
+  const [openId, setOpenId] = useState<string | null | undefined>(() => params.get("student") ?? undefined);
+  const [reviewing, setReviewing] = useState(() => params.get("corrections") === "1");
+  // Search can open another student while this page is already showing
+  const [seenParams, setSeenParams] = useState(params.toString());
+  if (seenParams !== params.toString()) {
+    setSeenParams(params.toString());
+    if (params.get("student")) setOpenId(params.get("student"));
+    if (params.get("corrections") === "1") setReviewing(true);
+  }
+  const corrections = useResource(() => (canManage ? api<{ open: number }>("/api/corrections") : Promise.resolve({ open: 0 })), `corrections#${canManage}`);
   const [importing, setImporting] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const q = useDebounced(search.trim());
+
+  // A teacher with classes starts on their first class (adjusted while rendering, once)
+  if (!scoped && my.data) {
+    setScoped(true);
+    const first = my.data.limited ? my.data.classes[0] : undefined;
+    if (first) {
+      setGrade(first.grade);
+      setSection(first.section);
+    }
+  }
 
   const path = `/api/students${query({ search: q, grade, section, status, sort, page, limit: 25 })}`;
   const list = useResource(() => api<{ students: Student[]; pagination: Pagination }>(path), path);
@@ -88,7 +126,7 @@ export default function StudentsPage() {
         ))}
       </Select>
       <Select aria-label="Sort by" value={sort} onChange={(e) => reset(setSort)(e.target.value)}>
-        {SORTS.map(([v, label]) => (
+        {SORTS.filter(([v]) => !isTeacher || v === "name" || v === "grade").map(([v, label]) => (
           <option key={v} value={v}>
             {label}
           </option>
@@ -101,12 +139,17 @@ export default function StudentsPage() {
     <div className="pb-24 md:pb-0">
       {/* Header */}
       <div className="mb-6 flex items-start justify-between gap-4">
-        <div className="min-w-0">
+        <div className="flex min-w-0 items-center gap-4">
+          <span className="hidden size-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-accent to-[color-mix(in_oklab,var(--accent)_70%,var(--brand-green))] text-accent-foreground shadow-lg shadow-accent/20 sm:grid">
+            <Icon d={ICONS.users} className="size-6" />
+          </span>
+          <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight">Students</h1>
           <p className="mt-1 text-sm text-muted">
             {session.status === "authenticated" && session.tenant ? session.tenant.name : "Your institute"}
             {counts ? ` · ${counts.total.toLocaleString()} enrolled` : ""}
           </p>
+          </div>
         </div>
         {canManage && (
           <div className="flex shrink-0 gap-2">
@@ -135,7 +178,19 @@ export default function StudentsPage() {
         )}
       </div>
 
-      {/* Status tiles double as the status filter */}
+      {canManage && Boolean(corrections.data?.open) && (
+        <button onClick={() => setReviewing(true)} className="mb-5 flex w-full items-center gap-3 rounded-xl border border-warning/40 bg-warning-soft px-4 py-3 text-left text-sm transition-colors hover:border-warning">
+          <Icon d="M12 9v4M12 17h.01M10.3 3.9L2.4 18a2 2 0 001.7 3h15.8a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z" className="text-warning" />
+          <span className="flex-1">
+            <span className="font-medium">{corrections.data!.open} correction request{corrections.data!.open === 1 ? "" : "s"}</span> from teachers about student details
+          </span>
+          <span className="font-medium text-accent">Review →</span>
+        </button>
+      )}
+
+      {!isTeacher && (
+        <>
+      {/* Status tiles double as the status filter (records office only) */}
       <div className="-mx-4 mb-5 flex snap-x gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:grid sm:grid-cols-5 sm:overflow-visible sm:px-0 sm:pb-0">
         {(["all", ...STUDENT_STATUSES] as StatusFilter[]).map((s) => {
           const value = s === "all" ? counts?.total : (counts?.[s] ?? 0);
@@ -160,6 +215,8 @@ export default function StudentsPage() {
           );
         })}
       </div>
+        </>
+      )}
 
       {/* Toolbar */}
       <div className="mb-3 flex gap-2">
@@ -375,7 +432,28 @@ export default function StudentsPage() {
       )}
 
       {openId !== undefined && (
-        <StudentDrawer studentId={openId} canManage={canManage} onClose={() => setOpenId(undefined)} onSaved={refresh} />
+        <StudentDrawer
+          studentId={openId}
+          canManage={canManage}
+          onClose={() => {
+            setOpenId(undefined);
+            if (window.location.search) router.replace("/app/students", { scroll: false });
+          }}
+          onSaved={refresh}
+        />
+      )}
+      {reviewing && (
+        <CorrectionsDrawer
+          onClose={() => {
+            setReviewing(false);
+            corrections.reload();
+            if (window.location.search) router.replace("/app/students", { scroll: false });
+          }}
+          onOpenStudent={(id) => {
+            setReviewing(false);
+            setOpenId(id);
+          }}
+        />
       )}
       {importing && <ImportDrawer onClose={() => setImporting(false)} onImported={refresh} />}
       {exporting && (

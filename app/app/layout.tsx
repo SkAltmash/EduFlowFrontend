@@ -3,18 +3,27 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { CommandPalette, openPalette, type PaletteItem } from "@/components/command-palette";
 import { Drawer } from "@/components/data";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge, Button, ICONS, Icon, Logo, Spinner, cx } from "@/components/ui";
+import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { NAV_ICONS, NOTICES_CHANGED_EVENT } from "@/lib/classroom";
+import { flushPending } from "@/lib/offline-attendance";
+
+type NavGroup = "Overview" | "Academics" | "Communication" | "Finance" | "Admin";
 
 interface NavItem {
   href: string;
   label: string;
   icon: string;
+  group: NavGroup;
   roles?: string[];
 }
+
+const TEACHING = ["owner", "admin", "teacher"];
 
 const SETTINGS_ICON =
   "M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z";
@@ -23,23 +32,64 @@ const LOGOUT_ICON = "M15 4h3a2 2 0 012 2v12a2 2 0 01-2 2h-3M10 17l5-5-5-5M15 12H
 const USER_ICON = "M12 12a4 4 0 100-8 4 4 0 000 8zM4 21a8 8 0 0116 0";
 
 const NAV: NavItem[] = [
-  { href: "/app/dashboard", label: "Dashboard", icon: "M4 13h6V4H4zM14 20h6v-9h-6zM14 4v3h6V4zM4 20h6v-3H4z" },
-  { href: "/app/students", label: "Students", icon: ICONS.users },
+  { href: "/app/dashboard", label: "Dashboard", icon: "M4 13h6V4H4zM14 20h6v-9h-6zM14 4v3h6V4zM4 20h6v-3H4z", group: "Overview" },
+  { href: "/app/students", label: "Students", icon: ICONS.users, group: "Academics" },
   // Attendance is for teaching staff; accountants only handle fees
-  { href: "/app/attendance", label: "Attendance", icon: ICONS.calendarCheck, roles: ["owner", "admin", "teacher"] },
-  { href: "/app/exams", label: "Tests", icon: "M9 4h6M8 4H6v16h12V4h-2M9 10h6M9 14h6M9 18h3", roles: ["owner", "admin", "teacher"] },
+  { href: "/app/attendance", label: "Attendance", icon: ICONS.calendarCheck, group: "Academics", roles: TEACHING },
+  { href: "/app/homework", label: "Homework", icon: NAV_ICONS.homework, group: "Academics", roles: TEACHING },
+  { href: "/app/exams", label: "Tests", icon: "M9 4h6M8 4H6v16h12V4h-2M9 10h6M9 14h6M9 18h3", group: "Academics", roles: TEACHING },
   // Rankings combine tests and attendance, so the same roles as both
-  { href: "/app/performance", label: "Performance", icon: "M8 21h8M12 17v4M7 4h10v5a5 5 0 01-10 0V4zM17 5h3v2a3 3 0 01-3 3M7 5H4v2a3 3 0 003 3", roles: ["owner", "admin", "teacher"] },
+  { href: "/app/performance", label: "Performance", icon: "M8 21h8M12 17v4M7 4h10v5a5 5 0 01-10 0V4zM17 5h3v2a3 3 0 01-3 3M7 5H4v2a3 3 0 003 3", group: "Academics", roles: TEACHING },
+  { href: "/app/timetable", label: "Timetable", icon: NAV_ICONS.timetable, group: "Academics", roles: TEACHING },
+  { href: "/app/notices", label: "Notices", icon: NAV_ICONS.notices, group: "Communication" },
   // Teachers don't handle money
-  { href: "/app/fees", label: "Fees", icon: "M7 4h10M7 8h10M7 4c4 0 6 2 6 4s-2 4-6 4l7 8", roles: ["owner", "admin", "accountant"] },
+  { href: "/app/fees", label: "Fees", icon: "M7 4h10M7 8h10M7 4c4 0 6 2 6 4s-2 4-6 4l7 8", group: "Finance", roles: ["owner", "admin", "accountant"] },
   // Everyone has "My account"; owners and admins also get the school's settings
-  { href: "/app/settings", label: "Settings", icon: SETTINGS_ICON },
+  { href: "/app/settings", label: "Settings", icon: SETTINGS_ICON, group: "Admin" },
 ];
+
+const GROUPS: NavGroup[] = ["Overview", "Academics", "Communication", "Finance", "Admin"];
 
 /** Phones fit five tabs; with more pages the fifth becomes "More". */
 const MAX_TABS = 5;
-/** Which pages keep a tab of their own on phones, most used first. */
-const MOBILE_PRIORITY = ["/app/dashboard", "/app/students", "/app/attendance", "/app/fees", "/app/exams", "/app/performance", "/app/settings"];
+/** Which pages keep a tab of their own on phones, most used first, per role. */
+const MOBILE_PRIORITY: Record<string, string[]> = {
+  owner: ["/app/dashboard", "/app/students", "/app/attendance", "/app/fees"],
+  admin: ["/app/dashboard", "/app/students", "/app/attendance", "/app/fees"],
+  teacher: ["/app/dashboard", "/app/attendance", "/app/homework", "/app/exams"],
+  accountant: ["/app/dashboard", "/app/students", "/app/fees", "/app/notices"],
+};
+
+/** Quick actions offered in the command palette. */
+const ACTIONS: (Omit<PaletteItem, "group"> & { roles?: string[] })[] = [
+  { id: "a:attendance", label: "Mark attendance", hint: "Open today's register", icon: ICONS.calendarCheck, href: "/app/attendance", roles: TEACHING },
+  { id: "a:homework", label: "Give homework", hint: "Post to a class and send to parents", icon: NAV_ICONS.homework, href: "/app/homework?new=1", roles: TEACHING },
+  { id: "a:notice", label: "Post a notice", hint: "To staff or parents", icon: NAV_ICONS.notices, href: "/app/notices?new=1", roles: TEACHING },
+  { id: "a:fee", label: "Collect fee", hint: "Record a payment and print a receipt", icon: "M7 4h10M7 8h10M7 4c4 0 6 2 6 4s-2 4-6 4l7 8", href: "/app/fees", roles: ["owner", "admin", "accountant"] },
+  { id: "a:student", label: "Add student", icon: ICONS.plus, href: "/app/students", roles: ["owner", "admin"] },
+  { id: "a:account", label: "Change my password", icon: USER_ICON, href: "/app/settings#account" },
+];
+
+/** Unread staff notices for the bell; refreshed every few minutes and when notices are read. */
+function useUnreadNotices(enabled: boolean) {
+  const [unread, setUnread] = useState(0);
+  const load = useCallback(() => {
+    api<{ unread: number }>("/api/notices")
+      .then((r) => setUnread(r.unread))
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    if (!enabled) return;
+    load();
+    const id = setInterval(load, 180_000);
+    window.addEventListener(NOTICES_CHANGED_EVENT, load);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener(NOTICES_CHANGED_EVENT, load);
+    };
+  }, [enabled, load]);
+  return unread;
+}
 const MORE_ICON = "M5 12h.01M12 12h.01M19 12h.01";
 
 // ---------------------------------------------------------------------------
@@ -89,6 +139,16 @@ export default function AppLayout({ children }: LayoutProps<"/app">) {
   const { session, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const collapsed = useCollapsed();
+  const unread = useUnreadNotices(session.status === "authenticated" && Boolean(session.tenant));
+
+  // Attendance saved offline goes out as soon as there's a connection
+  useEffect(() => {
+    if (session.status !== "authenticated" || !session.tenant) return;
+    const flush = () => void flushPending();
+    flush();
+    window.addEventListener("online", flush);
+    return () => window.removeEventListener("online", flush);
+  }, [session]);
 
   useEffect(() => {
     if (session.status === "anonymous") router.replace("/login");
@@ -126,8 +186,11 @@ export default function AppLayout({ children }: LayoutProps<"/app">) {
 
   const nav = NAV.filter((item) => !item.roles || item.roles.includes(session.role ?? ""));
   const isActive = (href: string) => pathname.startsWith(href);
-  const byPriority = [...nav].sort((a, b) => MOBILE_PRIORITY.indexOf(a.href) - MOBILE_PRIORITY.indexOf(b.href));
-  const tabs = nav.length <= MAX_TABS ? nav : byPriority.slice(0, MAX_TABS - 1);
+  const priority = MOBILE_PRIORITY[session.role ?? ""] ?? MOBILE_PRIORITY.owner;
+  const tabs = nav.length <= MAX_TABS ? nav : priority.map((href) => nav.find((i) => i.href === href)).filter((i): i is NavItem => Boolean(i)).slice(0, MAX_TABS - 1);
+  const current = nav.find((i) => isActive(i.href));
+  const pages: PaletteItem[] = nav.map((i) => ({ id: `p:${i.href}`, label: i.label, hint: i.group, icon: i.icon, href: i.href, group: "Pages" }));
+  const actions: PaletteItem[] = ACTIONS.filter((a) => !a.roles || a.roles.includes(session.role ?? "")).map((a) => ({ ...a, group: "Actions" }));
   // Everything else lives under "More" (in menu order)
   const more = nav.filter((i) => !tabs.includes(i));
   const moreActive = more.some((i) => isActive(i.href));
@@ -149,13 +212,19 @@ export default function AppLayout({ children }: LayoutProps<"/app">) {
             <Logo href="/app/dashboard" />
             <span className="truncate border-l border-border pl-3 text-sm text-muted">{session.tenant.name}</span>
           </div>
-          <button
-            onClick={() => setMenuOpen(true)}
-            aria-label="Account menu"
-            className="grid size-9 shrink-0 place-items-center rounded-full bg-accent-soft text-xs font-semibold text-accent transition-transform active:scale-95"
-          >
-            {initials}
-          </button>
+          <div className="flex shrink-0 items-center gap-1">
+            <button onClick={openPalette} aria-label="Search" className="grid size-9 place-items-center rounded-full text-muted active:bg-surface-muted">
+              <Icon d={NAV_ICONS.search} className="size-5" />
+            </button>
+            <BellLink unread={unread} />
+            <button
+              onClick={() => setMenuOpen(true)}
+              aria-label="Account menu"
+              className="ml-1 grid size-9 shrink-0 place-items-center rounded-full bg-accent-soft text-xs font-semibold text-accent transition-transform active:scale-95"
+            >
+              {initials}
+            </button>
+          </div>
         </div>
       </header>
 
@@ -204,9 +273,20 @@ export default function AppLayout({ children }: LayoutProps<"/app">) {
           </div>
         )}
 
-        <nav aria-label="Main" className={cx("flex flex-1 flex-col gap-1", collapsed ? "items-center px-3" : "px-3")}>
-          {nav.map((item) => {
+        <nav aria-label="Main" className={cx("flex flex-1 flex-col gap-0.5 overflow-y-auto pb-3", collapsed ? "items-center px-3" : "px-3")}>
+          {GROUPS.flatMap((group, gi) => {
+            const items = nav.filter((i) => i.group === group);
+            if (!items.length) return [];
+            const heading = collapsed ? (
+              gi > 0 ? <span key={`h:${group}`} aria-hidden className="my-2 h-px w-6 bg-border" /> : null
+            ) : (
+              <p key={`h:${group}`} className={cx("px-3 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted/80", gi > 0 && "pt-4")}>
+                {group}
+              </p>
+            );
+            return [heading, ...items.map((item) => {
             const active = isActive(item.href);
+            const badge = item.href === "/app/notices" && unread > 0 ? unread : 0;
             return (
               <Tip key={item.href} label={item.label} show={collapsed} className={collapsed ? undefined : "w-full"}>
                 <Link
@@ -221,10 +301,17 @@ export default function AppLayout({ children }: LayoutProps<"/app">) {
                 >
                   {active && !collapsed && <span aria-hidden className="absolute inset-y-1.5 -left-3 w-1 rounded-r-full bg-accent" />}
                   <Icon d={item.icon} className={collapsed ? "size-[18px]" : undefined} />
-                  {!collapsed && <span className="truncate">{item.label}</span>}
+                  {!collapsed && <span className="flex-1 truncate">{item.label}</span>}
+                  {badge > 0 &&
+                    (collapsed ? (
+                      <span aria-label={`${badge} unread`} className="absolute right-1.5 top-1.5 size-2 rounded-full bg-danger ring-2 ring-surface" />
+                    ) : (
+                      <span className="rounded-full bg-danger px-1.5 text-[10px] font-semibold leading-4 text-white">{badge}</span>
+                    ))}
                 </Link>
               </Tip>
             );
+          })];
           })}
         </nav>
 
@@ -239,9 +326,35 @@ export default function AppLayout({ children }: LayoutProps<"/app">) {
         </div>
       </aside>
 
-      <main className="min-w-0 flex-1 px-4 pb-[calc(var(--bottom-nav-h)+1.5rem)] pt-6 sm:px-8 sm:pt-8 md:pb-8">
-        <div className="mx-auto max-w-6xl">{children}</div>
-      </main>
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* Desktop: top bar with where you are, search and notices */}
+        <header className="sticky top-0 z-30 hidden h-14 items-center gap-4 border-b border-border bg-background/80 px-8 backdrop-blur-lg md:flex">
+          <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-2 text-sm">
+            <span className="truncate text-muted">{session.tenant.name}</span>
+            {current && (
+              <>
+                <Icon d={ICONS.chevronRight} className="size-3.5 shrink-0 text-muted/60" />
+                <span className="truncate font-medium">{current.label}</span>
+              </>
+            )}
+          </nav>
+          <button
+            onClick={openPalette}
+            className="ml-auto flex h-9 w-72 items-center gap-2.5 rounded-lg border border-border bg-surface px-3 text-sm text-muted shadow-sm transition-colors hover:border-accent/40 hover:text-foreground lg:w-80"
+          >
+            <Icon d={NAV_ICONS.search} />
+            <span className="flex-1 text-left">Search students, pages…</span>
+            <kbd className="rounded border border-border bg-surface-muted px-1.5 py-0.5 font-sans text-[10px]">Ctrl K</kbd>
+          </button>
+          <BellLink unread={unread} />
+        </header>
+
+        <main className="app-canvas min-w-0 flex-1 px-4 pb-[calc(var(--bottom-nav-h)+1.5rem)] pt-6 sm:px-8 sm:pt-8 md:pb-10">
+          <div className="mx-auto max-w-6xl">{children}</div>
+        </main>
+      </div>
+
+      <CommandPalette pages={pages} actions={actions} />
 
       {/* Phones: bottom tab bar */}
       <nav
@@ -449,5 +562,15 @@ function UserMenu({ collapsed, initials, name, email, onSignOut }: { collapsed: 
         </div>
       )}
     </div>
+  );
+}
+
+/** Notices with the unread count. */
+function BellLink({ unread }: { unread: number }) {
+  return (
+    <Link href="/app/notices" aria-label={unread ? `Notices, ${unread} unread` : "Notices"} className="relative grid size-9 place-items-center rounded-full text-muted transition-colors hover:bg-surface-muted hover:text-foreground">
+      <Icon d={NAV_ICONS.bell} className="size-5" />
+      {unread > 0 && <span className="absolute right-1 top-1 grid min-w-4 place-items-center rounded-full bg-danger px-1 text-[9px] font-bold leading-4 text-white ring-2 ring-background">{unread > 9 ? "9+" : unread}</span>}
+    </Link>
   );
 }

@@ -10,6 +10,7 @@ import { classLabel, formatPct, type ExamListItem } from "@/lib/exams";
 import { ExamEditor } from "./_components/exam-editor";
 import { MarksSheet } from "./_components/marks-sheet";
 import { MonthlyReports } from "./_components/monthly";
+import { loadMyClasses } from "@/lib/teaching";
 
 type Tab = "tests" | "monthly";
 
@@ -30,7 +31,10 @@ export default function ExamsPage() {
 
   const classes = useResource(() => api<{ classes: ClassSummary[] }>(`/api/attendance/classes?date=${localToday()}`), "classes");
   const grades = [...new Set(classes.data?.classes.map((c) => c.grade))];
-  const path = `/api/exams${query({ grade, month, search: q, page, limit: 18 })}`;
+  const my = useResource(loadMyClasses, "my-classes");
+  const [onlyMine, setOnlyMine] = useState(true);
+  const mine = Boolean(my.data?.limited) && onlyMine;
+  const path = `/api/exams${query({ grade, month, search: q, page, limit: 18, mine: mine ? "1" : undefined })}`;
   const list = useResource(() => api<{ exams: ExamListItem[]; pagination: Pagination }>(path), `${path}#${refreshKey}`);
 
   if (!allowed) {
@@ -55,10 +59,15 @@ export default function ExamsPage() {
 
   return (
     <div>
-      <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Tests & report cards</h1>
-          <p className="mt-1 text-sm text-muted">Enter marks, share results and send monthly progress reports to parents.</p>
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-4">
+          <span className="hidden size-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-accent to-[color-mix(in_oklab,var(--accent)_70%,var(--brand-green))] text-accent-foreground shadow-lg shadow-accent/20 sm:grid">
+            <Icon d="M9 4h6M8 4H6v16h12V4h-2M9 10h6M9 14h6M9 18h3" className="size-6" />
+          </span>
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">Tests & report cards</h1>
+            <p className="mt-1 text-sm text-muted">Enter marks, share results and send monthly progress reports to parents.</p>
+          </div>
         </div>
         {tab === "tests" && (
           <Button onClick={() => setCreating(true)}>
@@ -92,6 +101,15 @@ export default function ExamsPage() {
       ) : (
         <>
           <div className="mb-4 flex flex-wrap gap-2">
+            {my.data?.limited && (
+              <div className="inline-flex rounded-lg border border-border bg-surface p-0.5 text-sm">
+                {([true, false] as const).map((v) => (
+                  <button key={String(v)} onClick={() => { setOnlyMine(v); setPage(1); }} aria-pressed={onlyMine === v} className={cx("rounded-md px-3 py-1.5", onlyMine === v ? "bg-surface-muted font-medium" : "text-muted")}>
+                    {v ? "My classes" : "All classes"}
+                  </button>
+                ))}
+              </div>
+            )}
             <Input className="w-full sm:w-64" type="search" placeholder="Search tests…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
             <div className="w-40">
               <Select aria-label="Class" value={grade} onChange={(e) => { setGrade(e.target.value); setPage(1); }}>

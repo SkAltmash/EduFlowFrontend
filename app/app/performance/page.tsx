@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { useResource } from "@/components/data";
+import { PageIcon, useResource } from "@/components/data";
 import { Alert, Badge, ICONS, Icon, Input, Select, Skeleton, cx } from "@/components/ui";
 import { WA_ICON, WhatsAppDrawer } from "@/components/whatsapp-send";
 import { loadClassList, loadYears } from "@/lib/academics";
@@ -12,6 +12,7 @@ import { BOARD_VALUE, ordinal, pct, type Board, type Performance, type Performan
 import { Avatar } from "../students/_components/bits";
 import { StudentDrawer } from "../students/_components/student-drawer";
 import { ShareLeaderboard } from "./_components/share";
+import { loadMyClasses } from "@/lib/teaching";
 
 type Period = "month" | "3m" | "year";
 
@@ -54,6 +55,14 @@ function Leaderboards() {
   const school = session.status === "authenticated" ? (session.tenant?.name ?? "") : "";
   const [period, setPeriod] = useState<Period>("month");
   const [cls, setCls] = useState("");
+  // A teacher with assigned classes starts on their first class
+  const my = useResource(loadMyClasses, "my-classes");
+  const [scoped, setScoped] = useState(false);
+  if (!scoped && my.data) {
+    setScoped(true);
+    const first = my.data.limited ? my.data.classes[0] : undefined;
+    if (first) setCls(`${first.grade}|${first.section}`);
+  }
   const [board, setBoard] = useState<Board | null>(null);
   const [search, setSearch] = useState("");
   const [showAll, setShowAll] = useState(false);
@@ -99,13 +108,16 @@ function Leaderboards() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-4">
+          <PageIcon d={TROPHY} />
+          <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-semibold tracking-tight">Performance</h1>
             <LiveBadge at={data?.generatedAt} refreshing={loading && Boolean(data)} />
           </div>
           <p className="mt-1 text-sm text-muted">Live rankings from test marks and attendance. Updates on its own.</p>
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button
@@ -209,6 +221,7 @@ function Leaderboards() {
             </div>
 
             <aside className="space-y-4">
+              <SubjectsCard data={data} byId={byId} />
               <ClassToppers data={data} byId={byId} onOpen={setOpenId} />
               <MostImproved rows={data.students} onOpen={setOpenId} />
               <PerfectAttendance rows={data.students} onOpen={setOpenId} />
@@ -515,5 +528,48 @@ function PageSkeleton() {
       </div>
       <Skeleton className="h-96 rounded-xl" />
     </div>
+  );
+}
+
+/** Class average per subject (weakest first) and how many are below the pass mark. */
+function SubjectsCard({ data, byId }: { data: Performance; byId: Map<string, PerformanceRow> }) {
+  const [open, setOpen] = useState<string | null>(null);
+  return (
+    <SideCard title="Subjects" icon="M4 19.5V5a2 2 0 012-2h13v16H6.5a2.5 2.5 0 000 5H19">
+      {data.subjects.length === 0 ? (
+        <Empty>Appears once tests have marks.</Empty>
+      ) : (
+        <ul className="divide-y divide-border">
+          {data.subjects.map((s) => {
+            const weak = s.average < data.passPercent + 15;
+            return (
+              <li key={s.name} className="px-4 py-2.5">
+                <button onClick={() => setOpen(open === s.name ? null : s.name)} className="w-full text-left" disabled={!s.below.length}>
+                  <span className="flex items-center justify-between gap-2 text-sm">
+                    <span className="truncate font-medium">{s.name}</span>
+                    <span className={cx("tabular-nums", weak ? "text-warning" : "text-foreground")}>{pct(s.average)}</span>
+                  </span>
+                  <span className="mt-1.5 block h-1.5 rounded-full bg-surface-muted">
+                    <span className={cx("block h-full rounded-full", weak ? "bg-warning" : "bg-accent")} style={{ width: `${s.average}%` }} />
+                  </span>
+                  <span className="mt-1 block text-[11px] text-muted">
+                    {s.tests} test{s.tests === 1 ? "" : "s"}
+                    {s.below.length > 0 && <span className="text-danger"> · {s.below.length} below pass {open === s.name ? "▴" : "▾"}</span>}
+                  </span>
+                </button>
+                {open === s.name && (
+                  <ul className="mt-2 space-y-1 rounded-lg bg-surface-muted px-3 py-2 text-xs">
+                    {s.below.map((id) => {
+                      const r = byId.get(id);
+                      return r ? <li key={id}>{r.fullName} <span className="text-muted">· {r.grade}{r.section ? `-${r.section}` : ""}</span></li> : null;
+                    })}
+                  </ul>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </SideCard>
   );
 }

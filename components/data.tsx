@@ -82,14 +82,38 @@ export function useDebounced<T>(value: T, ms = 300) {
 // UI
 // ---------------------------------------------------------------------------
 
-export function PageHeader({ title, description, actions }: { title: string; description?: string; actions?: ReactNode }) {
+/** The gradient icon tile used next to page titles. */
+export function PageIcon({ d }: { d: string }) {
   return (
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-        {description && <p className="mt-1 text-sm text-muted">{description}</p>}
+    <span className="hidden size-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-accent to-[color-mix(in_oklab,var(--accent)_70%,var(--brand-green))] text-accent-foreground shadow-lg shadow-accent/20 sm:grid">
+      <svg viewBox="0 0 24 24" className="size-6" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d={d} />
+      </svg>
+    </span>
+  );
+}
+
+/** Page title with an optional icon tile, description and actions on the right. */
+export function PageHeader({ title, description, actions, icon, badge }: { title: string; description?: ReactNode; actions?: ReactNode; icon?: string; badge?: ReactNode }) {
+  return (
+    <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+      <div className="flex min-w-0 items-center gap-4">
+        {icon && (
+          <span className="hidden size-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-accent to-[color-mix(in_oklab,var(--accent)_70%,var(--brand-green))] text-accent-foreground shadow-lg shadow-accent/20 sm:grid">
+            <svg viewBox="0 0 24 24" className="size-6" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d={icon} />
+            </svg>
+          </span>
+        )}
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+            {badge}
+          </div>
+          {description && <p className="mt-1 text-sm text-muted">{description}</p>}
+        </div>
       </div>
-      {actions}
+      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </div>
   );
 }

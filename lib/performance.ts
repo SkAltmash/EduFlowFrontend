@@ -26,6 +26,8 @@ export interface Performance {
   summary: { students: number; ranked: number; tests: number; marks: number | null; attendance: number | null; perfectAttendance: number };
   students: PerformanceRow[];
   classes: { grade: string; section: string; students: number; marks: number | null; attendance: number | null; score: number | null; toppers: string[] }[];
+  /** Average per subject across the period's tests, weakest first; below = students under the pass mark */
+  subjects: { name: string; average: number; entries: number; tests: number; below: string[] }[];
   generatedAt: string;
 }
 

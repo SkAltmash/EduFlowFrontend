@@ -8,7 +8,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { formatDay } from "@/lib/attendance";
 import { SCALE_BANDS, STATUS_TEXT, classLabel, formatMark, formatPct, gradeTone, type ExamRow, type ExamView } from "@/lib/exams";
-import { downloadSpreadsheet } from "@/lib/spreadsheet";
+import { SPREADSHEET_ACCEPT, downloadSpreadsheet, readSpreadsheet } from "@/lib/spreadsheet";
 import { ExamEditor } from "./exam-editor";
 import { ExamReportDrawer } from "./report-card";
 
@@ -39,6 +39,11 @@ export function MarksSheet({ examId, onBack, onChanged, onDeleted }: { examId: s
   const path = `/api/exams/${examId}`;
   const loaded = useResource(() => api<ExamView>(path), path);
   const view = loaded.data;
+  // Subject teachers can only fill in their own subjects (and not report-card remarks)
+  const access = view?.access;
+  const canMark = (subjectId: string) => !access || access.subjects.includes(subjectId);
+  const canRemark = !access || access.all;
+  const importRef = useRef<HTMLInputElement>(null);
   const subjectIds = useMemo(() => view?.exam.subjects.map((s) => s.id) ?? [], [view]);
 
   const [edits, setEdits] = useState<Record<string, Draft>>({});
@@ -185,6 +190,59 @@ export function MarksSheet({ examId, onBack, onChanged, onDeleted }: { examId: s
     await downloadSpreadsheet(`marks-${exam.name.replace(/\s+/g, "-")}-${exam.grade}${exam.section}`, [header, ...rows], "xlsx", { sheetName: exam.name });
   }
 
+  /**
+   * Fills the sheet from an Excel/CSV file (same layout as the Excel download): rows are
+   * matched by admission number, columns by subject name. Nothing is saved until Save.
+   */
+  async function importMarks(file: File) {
+    if (!view) return;
+    setMessage(null);
+    try {
+      const [sheet] = await readSpreadsheet(file);
+      if (!sheet || sheet.rows.length < 2) throw new Error("The file is empty.");
+      const header = sheet.rows[0].map((h) => h.toLowerCase());
+      const admCol = header.findIndex((h) => h.includes("admission"));
+      if (admCol < 0) throw new Error("Couldn't find an “Admission no” column. Download the Excel first and fill that in.");
+      const cols = view.exam.subjects
+        .map((s) => ({ s, col: header.findIndex((h) => h.startsWith(s.name.toLowerCase())) }))
+        .filter((c) => c.col >= 0 && canMark(c.s.id));
+      if (!cols.length) throw new Error("No subject columns you can fill were found (headers must start with the subject name).");
+      const byAdm = new Map(view.students.map((r) => [r.student.admissionNo.toLowerCase(), r.student.id]));
+      let filled = 0;
+      let unknown = 0;
+      let invalid = 0;
+      const next = { ...edits };
+      for (const row of sheet.rows.slice(1)) {
+        const id = byAdm.get((row[admCol] ?? "").trim().toLowerCase());
+        if (!id) {
+          if ((row[admCol] ?? "").trim()) unknown += 1;
+          continue;
+        }
+        const base = next[id] ?? saved.get(id)!;
+        const marks = { ...base.marks };
+        for (const { s, col } of cols) {
+          const raw = (row[col] ?? "").trim();
+          if (!raw) continue;
+          if (isAbsent(raw)) marks[s.id] = "AB";
+          else if (/^\d+(\.\d+)?$/.test(raw) && Number(raw) <= s.maxMarks) marks[s.id] = raw;
+          else {
+            invalid += 1;
+            continue;
+          }
+          filled += 1;
+        }
+        next[id] = { ...base, marks };
+      }
+      setEdits(next);
+      const parts = [`Filled ${filled} mark${filled === 1 ? "" : "s"} from ${file.name}. Check them, then Save.`];
+      if (unknown) parts.push(`${unknown} row${unknown === 1 ? "" : "s"} didn't match a student here.`);
+      if (invalid) parts.push(`${invalid} value${invalid === 1 ? " was" : "s were"} skipped (not a number or above the maximum).`);
+      setMessage({ tone: invalid || unknown ? "danger" : "success", text: parts.join(" ") });
+    } catch (err) {
+      setMessage({ tone: "danger", text: err instanceof Error ? err.message : "Couldn't read that file." });
+    }
+  }
+
   /** Enter / ↑ / ↓ move between students in the same subject, like a spreadsheet. */
   function onKey(e: React.KeyboardEvent<HTMLInputElement>, rowIndex: number, col: number) {
     const ids = rows.map((r) => r.student.id);
@@ -227,14 +285,31 @@ export function MarksSheet({ examId, onBack, onChanged, onDeleted }: { examId: s
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>
-            <Icon d={ICONS.edit} />
-            Edit test
-          </Button>
-          <Button variant="secondary" size="sm" onClick={exportSheet}>
+          {(!access || access.canEditTest) && (
+            <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>
+              <Icon d={ICONS.edit} />
+              Edit test
+            </Button>
+          )}
+          <Button variant="secondary" size="sm" onClick={exportSheet} title="Download marks (also works as an import template)">
             <Icon d={ICONS.download} />
             Excel
           </Button>
+          <Button variant="secondary" size="sm" onClick={() => importRef.current?.click()} title="Fill marks from an Excel or CSV file">
+            <Icon d={ICONS.upload} />
+            Import marks
+          </Button>
+          <input
+            ref={importRef}
+            type="file"
+            accept={SPREADSHEET_ACCEPT}
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = "";
+              if (f) importMarks(f);
+            }}
+          />
           {isAdmin && (
             <Button variant="danger" size="sm" onClick={remove}>
               Delete
@@ -293,6 +368,20 @@ export function MarksSheet({ examId, onBack, onChanged, onDeleted }: { examId: s
       <p className="mb-2 text-xs text-muted">
         Type marks, or <kbd className="rounded border border-border bg-surface-muted px-1 font-mono text-[10px]">ab</kbd> for absent. Enter moves to the next student.
       </p>
+
+      {access && !access.all && view && (
+
+        <div className="mb-4">
+
+          <Alert tone="warning">
+
+            You can enter marks for {view.exam.subjects.filter((s) => access.subjects.includes(s.id)).map((s) => s.name).join(", ") || "no subject"} only. Other subjects and remarks are for the class teacher.
+
+          </Alert>
+
+        </div>
+
+      )}
 
       {message && (
         <div className="mb-3">
@@ -360,12 +449,14 @@ export function MarksSheet({ examId, onBack, onChanged, onDeleted }: { examId: s
                             aria-label={`${s.name} marks for ${row.student.fullName}`}
                             inputMode="decimal"
                             autoComplete="off"
+                            disabled={!canMark(s.id)}
+                            title={canMark(s.id) ? undefined : `Only ${s.name}'s teacher or the class teacher can enter these marks`}
                             value={v}
                             onChange={(e) => setCell(row.student.id, s.id, e.target.value)}
                             onKeyDown={(e) => onKey(e, ri, ci)}
                             onFocus={(e) => e.target.select()}
                             className={cx(
-                              "h-9 w-16 rounded-md border bg-background text-center text-base tabular-nums outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 sm:text-sm",
+                              "h-9 w-16 rounded-md border bg-background text-center text-base tabular-nums outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 disabled:cursor-not-allowed disabled:bg-surface-muted disabled:text-muted sm:text-sm",
                               bad ? "border-danger text-danger" : v === "AB" ? "border-border font-medium text-muted" : failed ? "border-danger/50 text-danger" : "border-border"
                             )}
                           />
@@ -393,6 +484,7 @@ export function MarksSheet({ examId, onBack, onChanged, onDeleted }: { examId: s
                           else cells.current.delete(k);
                         }}
                         aria-label={`Remarks for ${row.student.fullName}`}
+                        disabled={!canRemark}
                         value={d.remarks}
                         maxLength={300}
                         onChange={(e) => setRemarks(row.student.id, e.target.value)}

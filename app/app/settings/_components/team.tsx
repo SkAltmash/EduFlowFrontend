@@ -8,7 +8,9 @@ import { Alert, Badge, Button, Field, ICONS, Icon, Input, Select, Skeleton, cx }
 import { WA_ICON } from "@/components/whatsapp-send";
 import { ApiError, ROLES, api, type Role } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { loadClassList } from "@/lib/academics";
 import { ROLE_INFO, type Member } from "@/lib/school";
+import { classText, type AllAssignments, type MyClass } from "@/lib/teaching";
 import { SettingsCard } from "./card";
 
 /** Mirrors MANAGES in backend/src/modules/school/school.service.js */
@@ -41,6 +43,8 @@ export function TeamSettings() {
   const myRole = (me?.role ?? "teacher") as Role;
   const canGive = MANAGES[myRole];
   const list = useResource(() => api<{ members: Member[] }>("/api/school/members"), "school-members");
+  const assignments = useResource(() => api<AllAssignments>("/api/teaching/assignments"), "teaching-assignments");
+  const [assigning, setAssigning] = useState<Member | null>(null);
   const [adding, setAdding] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [message, setMessage] = useState<{ tone: "success" | "danger"; text: string } | null>(null);
@@ -117,6 +121,13 @@ export function TeamSettings() {
                     <p className="truncate text-xs text-muted">
                       {m.email} · joined {formatDate(m.joinedAt)}
                     </p>
+                    {m.role !== "accountant" && (
+                      <TeachingSummary
+                        classes={assignments.data?.teachers.find((t) => t.userId === m.userId)?.classes ?? []}
+                        teacher={m.role === "teacher"}
+                        onEdit={canGive.includes("teacher") ? () => setAssigning(m) : undefined}
+                      />
+                    )}
                   </div>
                   <div className="flex w-full items-center gap-2 pl-12 sm:w-auto sm:pl-0">
                     {editable ? (
@@ -161,6 +172,19 @@ export function TeamSettings() {
         </dl>
         {myRole === "admin" && <p className="mt-2 text-xs text-muted">As an admin you can add and manage teachers and accountants. Ask an owner to add admins.</p>}
       </div>
+
+      {assigning && (
+        <AssignDrawer
+          member={assigning}
+          current={assignments.data?.teachers.find((t) => t.userId === assigning.userId)?.classes ?? []}
+          onClose={() => setAssigning(null)}
+          onSaved={(data) => {
+            assignments.setData(data);
+            setAssigning(null);
+            setMessage({ tone: "success", text: `Saved ${assigning.name}'s classes. They'll see them next time a page loads.` });
+          }}
+        />
+      )}
 
       {adding && (
         <AddMemberDrawer
@@ -303,6 +327,121 @@ function AddMemberDrawer({ roles, school, onClose, onAdded }: { roles: Role[]; s
           Add to team
         </Button>
       </form>
+    </Drawer>
+  );
+}
+
+/** "Class teacher 5 - A · Maths in 5 - B" under a team member, with an edit link. */
+function TeachingSummary({ classes, teacher, onEdit }: { classes: MyClass[]; teacher: boolean; onEdit?: () => void }) {
+  const parts = classes.flatMap((c) => [...(c.classTeacher ? [`Class teacher ${classText(c.grade, c.section)}`] : []), ...c.subjects.map((s) => `${s} in ${classText(c.grade, c.section)}`)]);
+  return (
+    <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
+      {parts.length ? (
+        parts.slice(0, 4).map((p) => (
+          <span key={p} className="rounded-md bg-accent-soft px-1.5 py-0.5 font-medium text-accent">
+            {p}
+          </span>
+        ))
+      ) : teacher ? (
+        <span className="text-warning">No classes yet (sees every class)</span>
+      ) : null}
+      {parts.length > 4 && <span className="text-muted">+{parts.length - 4} more</span>}
+      {onEdit && (teacher || parts.length > 0) && (
+        <button onClick={onEdit} className="font-medium text-accent hover:underline">
+          {parts.length ? "Edit classes" : "Assign classes"}
+        </button>
+      )}
+    </p>
+  );
+}
+
+type Row = { grade: string; section: string; subject: string };
+
+/** Class teacher and subject assignments for one member. */
+function AssignDrawer({ member, current, onClose, onSaved }: { member: Member; current: MyClass[]; onClose: () => void; onSaved: (data: AllAssignments) => void }) {
+  const classList = useResource(loadClassList, "academics-classes");
+  const [rows, setRows] = useState<Row[]>(() => current.flatMap((c) => [...(c.classTeacher ? [{ grade: c.grade, section: c.section, subject: "" }] : []), ...c.subjects.map((s) => ({ grade: c.grade, section: c.section, subject: s }))]));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const classes = classList.data?.classes ?? [];
+  const update = (i: number, patch: Partial<Row>) => setRows((l) => l.map((r, k) => (k === i ? { ...r, ...patch } : r)));
+
+  async function save() {
+    setBusy(true);
+    setError(null);
+    try {
+      onSaved(await api<AllAssignments>(`/api/teaching/assignments/${member.userId}`, { method: "PUT", body: { assignments: rows.filter((r) => r.grade) } }));
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Drawer
+      title={`${member.name}'s classes`}
+      onClose={onClose}
+      footer={
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={save} loading={busy}>
+            Save
+          </Button>
+        </div>
+      }
+    >
+      {error && <Alert>{error}</Alert>}
+      <p className="text-sm text-muted">
+        A <strong className="text-foreground">class teacher</strong> marks attendance, enters marks in every subject and writes report-card remarks for their class.
+        A <strong className="text-foreground">subject teacher</strong> enters marks and homework for their subject only. Teachers see their own classes first everywhere.
+      </p>
+      {classList.data && classes.length === 0 && <Alert tone="warning">Set up your classes first (Settings → Classes &amp; subjects).</Alert>}
+      <ul className="space-y-2">
+        {rows.map((r, i) => {
+          const cls = classes.find((c) => c.name === r.grade);
+          return (
+            <li key={i} className="grid grid-cols-[1fr_1fr_1.4fr_auto] items-center gap-2 rounded-xl border border-border bg-surface p-2">
+              <Select aria-label="Class" value={r.grade} onChange={(e) => update(i, { grade: e.target.value, section: "", subject: r.subject })} className="h-9 text-sm">
+                <option value="">Class…</option>
+                {classes.map((c) => (
+                  <option key={c.id} value={c.name}>
+                    {c.name}
+                  </option>
+                ))}
+              </Select>
+              <Select aria-label="Section" value={r.section} onChange={(e) => update(i, { section: e.target.value })} className="h-9 text-sm" disabled={!cls?.sections.length}>
+                <option value="">{cls?.sections.length ? "All sections" : "—"}</option>
+                {cls?.sections.map((sec) => (
+                  <option key={sec} value={sec}>
+                    {sec}
+                  </option>
+                ))}
+              </Select>
+              <Select aria-label="Role in class" value={r.subject} onChange={(e) => update(i, { subject: e.target.value })} className="h-9 text-sm">
+                <option value="">Class teacher</option>
+                {(cls?.subjects ?? []).map((s) => (
+                  <option key={s.id} value={s.name}>
+                    {s.name} teacher
+                  </option>
+                ))}
+                {r.subject && !cls?.subjects.some((s) => s.name === r.subject) && <option value={r.subject}>{r.subject} teacher</option>}
+              </Select>
+              <Button variant="ghost" size="icon-sm" aria-label="Remove" onClick={() => setRows((l) => l.filter((_, k) => k !== i))}>
+                <Icon d={ICONS.x} />
+              </Button>
+            </li>
+          );
+        })}
+      </ul>
+      <Button variant="secondary" onClick={() => setRows((l) => [...l, { grade: "", section: "", subject: "" }])}>
+        <Icon d={ICONS.plus} />
+        Add class or subject
+      </Button>
+      {rows.length === 0 && <p className="text-xs text-muted">With no classes, a teacher can work with every class (handy until you set this up).</p>}
+      <p className="text-xs text-muted">Subjects come from each class&apos;s subject list in Settings → Classes &amp; subjects.</p>
     </Drawer>
   );
 }

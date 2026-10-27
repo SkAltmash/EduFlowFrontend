@@ -74,6 +74,8 @@ export interface ExamView {
   grading: Grading;
   students: ExamRow[];
   stats: ExamStats;
+  /** What the signed-in member may change: subject ids they can mark, all = every subject (and remarks) */
+  access?: { subjects: string[]; all: boolean; canEditTest: boolean };
 }
 
 export interface ExamListItem extends Exam {

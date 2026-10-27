@@ -10,6 +10,7 @@ import { Overview } from "./_components/overview";
 import { Payments } from "./_components/payments";
 import { Plans } from "./_components/plans";
 import { ReceiptDrawer } from "./_components/receipt";
+import { PageIcon } from "@/components/data";
 
 type Tab = "overview" | "students" | "payments" | "plans";
 const TABS: [Tab, string][] = [
@@ -46,10 +47,13 @@ export default function FeesPage() {
 
   return (
     <div className="pb-24 sm:pb-0">
-      <div className="mb-5 flex items-end justify-between gap-4">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight">Fees</h1>
-          <p className="mt-1 text-sm text-muted">Plans, dues, collections and receipts.</p>
+      <div className="mb-5 flex items-center justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-4">
+          <PageIcon d="M7 4h10M7 8h10M7 4c4 0 6 2 6 4s-2 4-6 4l7 8" />
+          <div className="min-w-0">
+            <h1 className="text-2xl font-semibold tracking-tight">Fees</h1>
+            <p className="mt-1 text-sm text-muted">Plans, dues, collections and receipts.</p>
+          </div>
         </div>
         <Button onClick={() => setCollectFor(null)} className="shrink-0">
           <Icon d={ICONS.plus} />

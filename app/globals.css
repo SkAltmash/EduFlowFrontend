@@ -150,3 +150,31 @@ body {
 :root[data-theme="dark"] .logo-dark {
   display: block;
 }
+
+/* App canvas: a faint brand wash at the top of every page */
+.app-canvas {
+  background:
+    radial-gradient(ellipse 70% 260px at 50% -60px, color-mix(in oklab, var(--accent) 9%, transparent), transparent),
+    radial-gradient(ellipse 40% 200px at 100% 0, color-mix(in oklab, var(--brand-green) 6%, transparent), transparent);
+}
+
+/* Cards: a soft lift so surfaces read as layers, not just outlines */
+.border.bg-surface {
+  box-shadow:
+    0 1px 2px rgb(16 24 40 / 0.04),
+    0 1px 3px rgb(16 24 40 / 0.03);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .border.bg-surface {
+    box-shadow: 0 1px 0 rgb(255 255 255 / 0.03) inset;
+  }
+}
+:root[data-theme="dark"] .border.bg-surface {
+  box-shadow: 0 1px 0 rgb(255 255 255 / 0.03) inset;
+}
+
+/* Thin, quiet scrollbars inside panels */
+.overflow-y-auto {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--muted) 35%, transparent) transparent;
+}

@@ -10,6 +10,8 @@ import { useAuth } from "@/lib/auth";
 import type { Dashboard } from "@/lib/dashboard";
 import { classLabel } from "@/lib/exams";
 import { MODE_LABEL, formatMoney } from "@/lib/fees";
+import { NAV_ICONS, weekdayOf } from "@/lib/classroom";
+import { SubjectChip } from "@/components/academic-bits";
 
 const TEST_ICON = "M9 4h6M8 4H6v16h12V4h-2M9 10h6M9 14h6M9 18h3";
 const FEE_ICON = "M7 4h10M7 8h10M7 4c4 0 6 2 6 4s-2 4-6 4l7 8";
@@ -304,20 +306,33 @@ export default function DashboardPage() {
 
   const actions = [
     canMark && { href: "/app/attendance", label: "Mark attendance", icon: ICONS.calendarCheck },
+    canMark && role === "teacher" && { href: "/app/homework?new=1", label: "Give homework", icon: NAV_ICONS.homework },
     data?.fees && { href: "/app/fees", label: "Collect fee", icon: FEE_ICON },
     canManage && { href: "/app/students", label: "Add student", icon: ICONS.plus },
     data?.tests && { href: "/app/exams", label: "New test", icon: TEST_ICON },
   ].filter((a): a is { href: string; label: string; icon: string } => Boolean(a));
+  const myClasses = data?.scope.classes ?? [];
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-sm text-muted">{formatDay(today)}</p>
-          <h1 className="mt-0.5 text-2xl font-semibold tracking-tight">
+          <h1 className="mt-0.5 text-2xl font-semibold tracking-tight sm:text-3xl">
             {greeting()}
             {firstName && `, ${firstName}`}
           </h1>
+          {myClasses.length > 0 && (
+            <p className="mt-2 flex flex-wrap gap-1.5">
+              {myClasses.map((c) => (
+                <span key={`${c.grade}|${c.section}`} className="rounded-full border border-accent/30 bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent">
+                  {c.classTeacher ? "Class teacher · " : ""}
+                  {c.section ? `${c.grade} - ${c.section}` : `Class ${c.grade}`}
+                  {c.subjects.length > 0 && ` · ${c.subjects.join(", ")}`}
+                </span>
+              ))}
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap gap-2">
           {actions.map((a, i) => (
@@ -340,13 +355,25 @@ export default function DashboardPage() {
         <DashboardSkeleton />
       ) : (
         <div className="space-y-4">
-          {data.students.total === 0 && <GettingStarted canManage={canManage} canMark={canMark} seesFees={Boolean(data.fees)} />}
+          {data.students.total === 0 && !data.scope.limited && <GettingStarted canManage={canManage} canMark={canMark} seesFees={Boolean(data.fees)} />}
+
+          {data.corrections > 0 && (
+            <Link href="/app/students?corrections=1" className="flex items-center gap-3 rounded-xl border border-warning/40 bg-warning-soft px-4 py-3 text-sm transition-colors hover:border-warning">
+              <Icon d={ALERT_ICON} className="text-warning" />
+              <span className="flex-1">
+                <span className="font-medium">{data.corrections} correction request{data.corrections === 1 ? "" : "s"}</span> from teachers about student details
+              </span>
+              <span className="font-medium text-accent">Review →</span>
+            </Link>
+          )}
+
+          {canMark && <TodayStrip data={data} />}
 
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Kpi
               href="/app/students"
               icon={ICONS.users}
-              label="Active students"
+              label={data.scope.limited ? "My students" : "Active students"}
               value={data.students.active.toLocaleString("en-IN")}
               hint={data.students.newThisMonth ? `+${data.students.newThisMonth} added this month` : `${data.students.total.toLocaleString("en-IN")} on record`}
             />
@@ -426,6 +453,136 @@ export default function DashboardPage() {
             </div>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+const CAKE = "M20 21v-8a2 2 0 00-2-2H6a2 2 0 00-2 2v8M4 16s1.5-1 4-1 4 1 4 1 1.5 1 4 1 4-1 4-1M2 21h20M7 8v3M12 8v3M17 8v3M7 4h.01M12 4h.01M17 4h.01";
+
+/** Today at a glance: periods (with the live one), birthdays, students on leave, notices. */
+function TodayStrip({ data }: { data: Dashboard }) {
+  const { periods, birthdays, leaves } = data.today;
+  const now = new Date().toTimeString().slice(0, 5);
+  const todaysBirthdays = birthdays.filter((b) => b.today);
+  const upcoming = birthdays.filter((b) => !b.today);
+  const hasPeriods = periods.length > 0 && weekdayOf(data.date) <= 7;
+  return (
+    <div className="grid gap-4 lg:grid-cols-3">
+      <section className="rounded-xl border border-border bg-surface lg:col-span-2">
+        <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+          <h2 className="flex items-center gap-2 font-semibold">
+            <Icon d={NAV_ICONS.timetable} className="text-accent" />
+            Your periods today
+          </h2>
+          <Link href="/app/timetable" className="text-xs font-medium text-accent hover:underline">
+            Timetable →
+          </Link>
+        </div>
+        {!hasPeriods ? (
+          <p className="px-4 py-8 text-center text-sm text-muted">No periods on your timetable today.</p>
+        ) : (
+          <ol className="flex gap-2 overflow-x-auto p-4">
+            {periods.map((p) => {
+              const live = now >= p.start && now < p.end;
+              const done = now >= p.end;
+              return (
+                <li key={p.id} className={cx("min-w-36 shrink-0 rounded-xl border p-3 transition-colors", live ? "border-accent bg-accent-soft shadow-md shadow-accent/10" : done ? "border-border opacity-60" : "border-border")}>
+                  <p className="flex items-center justify-between gap-2 text-xs tabular-nums text-muted">
+                    {p.start}–{p.end}
+                    {live && <span className="rounded-full bg-accent px-1.5 text-[10px] font-semibold text-accent-foreground">Now</span>}
+                  </p>
+                  <div className="mt-1.5">
+                    <SubjectChip name={p.subject} />
+                  </div>
+                  <p className="mt-1 text-sm font-medium">Class {p.section ? `${p.grade} - ${p.section}` : p.grade}</p>
+                </li>
+              );
+            })}
+          </ol>
+        )}
+      </section>
+
+      <section className="rounded-xl border border-border bg-surface">
+        <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+          <h2 className="flex items-center gap-2 font-semibold">
+            <Icon d={NAV_ICONS.notices} className="text-accent" />
+            Notices
+          </h2>
+          {data.notices.unread > 0 ? <Badge tone="danger">{data.notices.unread} new</Badge> : <Link href="/app/notices" className="text-xs font-medium text-accent hover:underline">All →</Link>}
+        </div>
+        {data.notices.latest.length === 0 ? (
+          <p className="px-4 py-8 text-center text-sm text-muted">No notices.</p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {data.notices.latest.map((n) => (
+              <li key={n.id}>
+                <Link href="/app/notices" className="flex items-start gap-2.5 px-4 py-2.5 hover:bg-surface-muted">
+                  <span className={cx("mt-1.5 size-2 shrink-0 rounded-full", !n.read && n.audience === "staff" ? "bg-accent" : "bg-transparent")} />
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium">{n.title}</span>
+                    <span className="block truncate text-xs text-muted">
+                      {n.audience === "parents" ? "For parents" : "Staff"} · {n.createdByName}
+                    </span>
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {(birthdays.length > 0 || leaves.length > 0) && (
+        <section className="grid gap-4 sm:grid-cols-2 lg:col-span-3">
+          <div className="rounded-xl border border-border bg-surface">
+            <h2 className="flex items-center gap-2 border-b border-border px-4 py-3 font-semibold">
+              <Icon d={CAKE} className="text-[#e0558b]" />
+              Birthdays
+            </h2>
+            {birthdays.length === 0 ? (
+              <p className="px-4 py-6 text-center text-sm text-muted">No birthdays this week.</p>
+            ) : (
+              <ul className="divide-y divide-border">
+                {[...todaysBirthdays, ...upcoming].slice(0, 6).map((b) => (
+                  <li key={b.id} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium">
+                        {b.today && "🎂 "}
+                        {b.fullName}
+                      </span>
+                      <span className="text-xs text-muted">Class {b.section ? `${b.grade} - ${b.section}` : b.grade} · turns {b.age}</span>
+                    </span>
+                    <span className={cx("shrink-0 text-xs", b.today ? "rounded-full bg-[#e0558b]/15 px-2 py-0.5 font-semibold text-[#c2185b]" : "text-muted")}>{b.today ? "Today" : formatDay(b.date, "short")}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div className="rounded-xl border border-border bg-surface">
+            <h2 className="flex items-center gap-2 border-b border-border px-4 py-3 font-semibold">
+              <Icon d={ICONS.calendar} className="text-accent" />
+              On leave today
+            </h2>
+            {leaves.length === 0 ? (
+              <p className="px-4 py-6 text-center text-sm text-muted">Nobody is on leave today.</p>
+            ) : (
+              <ul className="divide-y divide-border">
+                {leaves.map((l) => (
+                  <li key={l.id} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium">{l.fullName}</span>
+                      <span className="block truncate text-xs text-muted">
+                        Class {l.section ? `${l.grade} - ${l.section}` : l.grade}
+                        {l.reason && ` · ${l.reason}`}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-xs text-muted">until {formatDay(l.until, "short")}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </section>
       )}
     </div>
   );

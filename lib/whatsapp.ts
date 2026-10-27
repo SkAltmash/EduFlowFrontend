@@ -1,7 +1,7 @@
 // WhatsApp messaging to parents. Messages are always built by the server from
 // its own records; the browser only chooses who to message.
 
-export type MessageType = "fee_receipt" | "fee_reminder" | "absence" | "attendance_summary" | "exam_result" | "progress_report" | "performance_report";
+export type MessageType = "fee_receipt" | "fee_reminder" | "absence" | "attendance_summary" | "exam_result" | "progress_report" | "performance_report" | "homework" | "notice";
 
 export type MessageRef =
   | { paymentId: string }
@@ -9,7 +9,9 @@ export type MessageRef =
   | { studentId: string; date: string }
   | { studentId: string; month: string }
   | { examId: string; studentId: string }
-  | { studentId: string; from: string; to: string; grade?: string; section?: string };
+  | { studentId: string; from: string; to: string; grade?: string; section?: string }
+  | { homeworkId: string; studentId: string }
+  | { noticeId: string; studentId: string };
 
 export interface LastSent {
   status: "opened" | "sent" | "delivered" | "read" | "failed";
@@ -76,12 +78,16 @@ export const TYPE_LABEL: Record<MessageType, string> = {
   exam_result: "Test result",
   progress_report: "Progress report",
   performance_report: "Performance report",
+  homework: "Homework",
+  notice: "Notice",
 };
 
 /** Must match how the server keys each message (see buildRecipients in the API). */
 export function refKeyOf(type: MessageType, ref: MessageRef) {
   if ("paymentId" in ref) return ref.paymentId;
   if ("from" in ref) return `perf:${ref.studentId}:${ref.from}:${ref.to}`;
+  if ("homeworkId" in ref) return `hw:${ref.homeworkId}:${ref.studentId}`;
+  if ("noticeId" in ref) return `notice:${ref.noticeId}:${ref.studentId}`;
   if ("examId" in ref) return `${ref.examId}:${ref.studentId}`;
   if ("date" in ref) return `${ref.studentId}:${ref.date}`;
   if ("month" in ref) return type === "progress_report" ? `progress:${ref.studentId}:${ref.month}` : `${ref.studentId}:${ref.month}`;

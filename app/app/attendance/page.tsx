@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { useResource } from "@/components/data";
-import { Alert, Button, cx } from "@/components/ui";
+import { Alert, Button, ICONS, Icon, cx } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { formatRate, localToday, type ClassSummary } from "@/lib/attendance";
@@ -27,8 +27,12 @@ function AttendanceWorkspace() {
   const dirtyRef = useRef(false);
 
   const path = `/api/attendance/classes?date=${date}`;
-  const overview = useResource(() => api<{ classes: ClassSummary[]; unassigned: number }>(path), path);
+  const overview = useResource(() => api<{ classes: ClassSummary[]; unassigned: number; limited?: boolean }>(path), path);
   const classes = overview.data?.classes;
+  const [showOthers, setShowOthers] = useState(false);
+  const limited = Boolean(overview.data?.limited);
+  const mine = limited ? classes?.filter((c) => c.mine) : classes;
+  const others = limited ? (classes?.filter((c) => !c.mine) ?? []) : [];
 
   const onDirtyChange = useCallback((dirty: boolean) => {
     dirtyRef.current = dirty;
@@ -49,10 +53,15 @@ function AttendanceWorkspace() {
 
   return (
     <div>
-      <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Attendance</h1>
-          <p className="mt-1 text-sm text-muted">Mark each class daily and track who needs attention.</p>
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-4">
+          <span className="hidden size-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-accent to-[color-mix(in_oklab,var(--accent)_70%,var(--brand-green))] text-accent-foreground shadow-lg shadow-accent/20 sm:grid">
+            <Icon d={ICONS.calendarCheck} className="size-6" />
+          </span>
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">Attendance</h1>
+            <p className="mt-1 text-sm text-muted">{limited ? "Your classes first. Mark each one daily and track who needs attention." : "Mark each class daily and track who needs attention."}</p>
+          </div>
         </div>
         <div role="tablist" className="inline-flex w-full rounded-lg border border-border bg-surface p-0.5 text-sm sm:w-auto">
           {(
@@ -131,11 +140,21 @@ function AttendanceWorkspace() {
                   </Alert>
                 </div>
               )}
+              {limited && <h2 className="mb-3 text-sm font-semibold">My classes</h2>}
               <ClassGrid
-                classes={classes}
+                classes={mine}
                 loading={overview.loading}
                 onOpen={(c) => setView({ tab: "mark", open: { grade: c.grade, section: c.section } })}
               />
+              {others.length > 0 && (
+                <div className="mt-6">
+                  <button onClick={() => setShowOthers((v) => !v)} className="mb-3 flex items-center gap-1.5 text-sm font-medium text-muted hover:text-foreground">
+                    <Icon d={ICONS.chevronRight} className={cx("transition-transform", showOthers && "rotate-90")} />
+                    Other classes ({others.length}) · view only
+                  </button>
+                  {showOthers && <ClassGrid classes={others} loading={overview.loading} onOpen={(c) => setView({ tab: "mark", open: { grade: c.grade, section: c.section } })} />}
+                </div>
+              )}
             </>
           )}
         </>

@@ -7,7 +7,7 @@ import { WA_ICON } from "@/components/whatsapp-send";
 import { api } from "@/lib/api";
 import { STATUS_LABEL, TYPE_LABEL, timeAgo, type LastSent, type MessageType, type WhatsAppSettings } from "@/lib/whatsapp";
 
-const TYPES: MessageType[] = ["fee_receipt", "fee_reminder", "absence", "attendance_summary", "exam_result", "progress_report", "performance_report"];
+const TYPES: MessageType[] = ["fee_receipt", "fee_reminder", "absence", "attendance_summary", "exam_result", "progress_report", "performance_report", "homework", "notice"];
 
 export function WhatsAppSettingsCard() {
   const loaded = useResource(() => api<{ settings: WhatsAppSettings }>("/api/whatsapp/settings"), "wa-settings");

@@ -1,6 +1,7 @@
 "use client";
 
 import { useSyncExternalStore, type ReactNode } from "react";
+import { PageIcon } from "@/components/data";
 import { ICONS, Icon, cx } from "@/components/ui";
 import { WA_ICON } from "@/components/whatsapp-send";
 import { useAuth } from "@/lib/auth";
@@ -83,9 +84,12 @@ export default function SettingsPage() {
   const active = tabs.find((t) => t.id === hash) ?? tabs[0];
   return (
     <div>
-      <div className="mb-6">
+      <div className="mb-6 flex items-center gap-4">
+        <PageIcon d={"M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"} />
+        <div>
         <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
         <p className="mt-1 text-sm text-muted">{isAdmin ? "Your school, your team and how EduFlow works for you." : "Your account and preferences."}</p>
+        </div>
       </div>
 
       <div className="md:grid md:grid-cols-[14rem_minmax(0,1fr)] md:gap-8">

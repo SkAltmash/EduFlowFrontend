@@ -23,6 +23,8 @@ export interface ClassSummary {
   marked: number;
   counts: StatusCounts;
   rate: number | null;
+  /** In the signed-in teacher's assigned classes (always true when not limited) */
+  mine?: boolean;
 }
 
 export interface RegisterStudent {
@@ -33,6 +35,8 @@ export interface RegisterStudent {
   /** false = no longer in this class (moved or left) but marked here that day */
   current: boolean;
   attendance: { status: AttendanceStatus; note: string } | null;
+  /** Leave recorded in advance covering this day */
+  leave?: { reason: string; from: string; to: string } | null;
 }
 
 export interface Register {

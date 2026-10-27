@@ -18,6 +18,7 @@ import {
 } from "@/lib/attendance";
 import { GENDERS, STUDENT_STATUSES, type Student } from "@/lib/students";
 import { Avatar, STATUS_LABEL, StatusBadge, classLabel } from "./bits";
+import { StudentClassroom } from "./student-classroom";
 
 type FormState = Record<
   | "admissionNo" | "firstName" | "lastName" | "gender" | "dateOfBirth" | "grade" | "section" | "rollNo"
@@ -329,6 +330,9 @@ function StudentForm({ initial, canManage, onClose, onSaved }: Props & { initial
 
 function ProfileView({ student: s }: { student: Student }) {
   const cls = classLabel(s);
+  // Teachers see what they need in class; admission and home address are for the office
+  const { session } = useAuth();
+  const isTeacher = session.status === "authenticated" && session.role === "teacher";
   const actions = [
     s.guardianPhone && { href: `tel:${s.guardianPhone}`, label: "Call", icon: ICONS.phone },
     s.guardianPhone && { href: `sms:${s.guardianPhone}`, label: "Message", icon: ICONS.message },
@@ -365,6 +369,7 @@ function ProfileView({ student: s }: { student: Student }) {
       )}
 
       <AttendanceCard studentId={s.id} />
+      <StudentClassroom studentId={s.id} studentName={s.fullName} />
 
       <DetailCard
         title="Guardian"
@@ -387,7 +392,7 @@ function ProfileView({ student: s }: { student: Student }) {
           ["Class", s.grade],
           ["Section", s.section],
           ["Roll no", s.rollNo],
-          ["Admitted", s.admissionDate && formatDay(s.admissionDate)],
+          ...(isTeacher ? [] : ([["Admitted", s.admissionDate && formatDay(s.admissionDate)]] as [string, React.ReactNode][])),
         ]}
       />
       {s.classHistory && s.classHistory.length > 0 && (
@@ -411,7 +416,7 @@ function ProfileView({ student: s }: { student: Student }) {
         rows={[
           ["Phone", s.phone && <a href={`tel:${s.phone}`} className="text-accent hover:underline">{s.phone}</a>],
           ["Email", s.email && <a href={`mailto:${s.email}`} className="break-all text-accent hover:underline">{s.email}</a>],
-          ["Address", s.address],
+          ...(isTeacher ? [] : ([["Address", s.address]] as [string, React.ReactNode][])),
         ]}
       />
       {s.notes && (
