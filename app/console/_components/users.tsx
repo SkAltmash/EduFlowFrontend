@@ -150,7 +150,7 @@ function UserDrawer({ id, onClose, onChanged, onOpenSchool }: { id: string; onCl
 
           {user.isSuperAdmin && (
             <p className="rounded-lg bg-accent-soft px-3 py-2.5 text-sm text-accent">
-              Super admin accounts can only be changed from the server with <code className="font-mono">npm run superadmin</code>.
+              This is a super admin. Change their name, email or password under Admins.
             </p>
           )}
 

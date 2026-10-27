@@ -8,6 +8,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge, Button, ICONS, Icon, Logo, Spinner, buttonClass, cx } from "@/components/ui";
 import { api } from "@/lib/api";
 import { isEnteringSchool, useAuth } from "@/lib/auth";
+import { Admins } from "./admins";
 import { Announcements } from "./announcements";
 import { AuditLogs } from "./audit-logs";
 import { Dashboard } from "./dashboard";
@@ -15,6 +16,7 @@ import { Plans } from "./plans";
 import { SchoolDrawer } from "./school-drawer";
 import { Schools } from "./schools";
 import { Security } from "./security";
+import { PlatformSettings } from "./settings";
 import { SystemHealth } from "./system";
 import { Users } from "./users";
 
@@ -28,7 +30,9 @@ const TABS = [
   { id: "announcements", label: "Announcements", group: "Engage", icon: "M3 11v2a1 1 0 001 1h2l5 4V6L6 10H4a1 1 0 00-1 1zM16 8a5 5 0 010 8M19 5a9 9 0 010 14" },
   { id: "system", label: "System health", group: "Platform", icon: "M3 12h4l3-8 4 16 3-8h4" },
   { id: "audit", label: "Audit log", group: "Platform", icon: "M9 4h6M8 4H6v16h12V4h-2M9 10h6M9 14h6M9 18h3" },
+  { id: "admins", label: "Admins", group: "Platform", icon: "M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3zM12 11a2 2 0 100-4 2 2 0 000 4zM8.5 15.5c.6-1.5 2-2.5 3.5-2.5s2.9 1 3.5 2.5" },
   { id: "security", label: "Security", group: "Platform", icon: "M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3zM9 12l2 2 4-4" },
+  { id: "settings", label: "Settings", group: "Platform", icon: "M4 6h16M4 12h16M4 18h16M8 4v4M16 10v4M10 16v4" },
 ] as const satisfies readonly { id: string; label: string; group: Group; icon: string }[];
 
 export type ConsoleTab = (typeof TABS)[number]["id"];
@@ -217,6 +221,8 @@ export function ConsoleShell() {
             {tab === "system" && <SystemHealth />}
             {tab === "audit" && <AuditLogs />}
             {tab === "security" && <Security />}
+            {tab === "admins" && <Admins />}
+            {tab === "settings" && <PlatformSettings />}
           </div>
         </main>
       </div>
