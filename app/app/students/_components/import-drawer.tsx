@@ -4,10 +4,11 @@ import { useMemo, useRef, useState } from "react";
 import { Drawer, Section, errorMessage } from "@/components/data";
 import { Alert, Badge, Button, Select, Spinner, cx } from "@/components/ui";
 import { api } from "@/lib/api";
+import { formatMoney } from "@/lib/fees";
 import { SPREADSHEET_ACCEPT, downloadSpreadsheet, isSpreadsheetFile, readSpreadsheet, type Sheet } from "@/lib/spreadsheet";
 import {
   DATE_FIELDS,
-  STUDENT_FIELDS,
+  IMPORT_FIELDS,
   downloadFile,
   mapColumns,
   rowsToStudents,
@@ -21,7 +22,7 @@ import {
 const BATCH_SIZE = 1000;
 const MAX_ROWS = 10_000;
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
-const TEMPLATE_DATE_COLUMNS = DATE_FIELDS.map((key) => STUDENT_FIELDS.findIndex((f) => f.key === key));
+const TEMPLATE_DATE_COLUMNS = [...DATE_FIELDS, "feesPaidDate"].map((key) => IMPORT_FIELDS.findIndex((f) => f.key === key));
 
 interface Parsed {
   mapping: ColumnMapping;
@@ -88,7 +89,7 @@ export function ImportDrawer({ onClose, onImported }: { onClose: () => void; onI
   async function runImport() {
     if (!parsed) return;
     setError(null);
-    const total: ImportResult = { total: 0, created: 0, updated: 0, skipped: 0, failed: [] };
+    const total: ImportResult = { total: 0, created: 0, updated: 0, skipped: 0, failed: [], feesRecorded: { students: 0, amount: 0 } };
     setProgress({ done: 0, total: parsed.students.length });
 
     try {
@@ -102,6 +103,8 @@ export function ImportDrawer({ onClose, onImported }: { onClose: () => void; onI
         total.created += res.created;
         total.updated += res.updated;
         total.skipped += res.skipped;
+        total.feesRecorded!.students += res.feesRecorded?.students ?? 0;
+        total.feesRecorded!.amount += res.feesRecorded?.amount ?? 0;
         // Make row numbers relative to the whole file
         total.failed.push(...res.failed.map((f) => ({ ...f, row: f.row + start })));
         setProgress({ done: start + batch.length, total: parsed.students.length });
@@ -128,7 +131,7 @@ export function ImportDrawer({ onClose, onImported }: { onClose: () => void; onI
     );
   }
 
-  const fieldLabel = (key: string) => STUDENT_FIELDS.find((f) => f.key === key)?.label ?? key;
+  const fieldLabel = (key: string) => IMPORT_FIELDS.find((f) => f.key === key)?.label ?? key;
 
   return (
     <Drawer title="Import students" onClose={onClose}>
@@ -149,6 +152,11 @@ export function ImportDrawer({ onClose, onImported }: { onClose: () => void; onI
               </div>
             ))}
           </div>
+          {(result.feesRecorded?.students ?? 0) > 0 && (
+            <Alert tone="success">
+              Fees already paid: {formatMoney(result.feesRecorded!.amount)} for {result.feesRecorded!.students} student{result.feesRecorded!.students === 1 ? "" : "s"}, kept as advance. It pays their fees automatically when you assign a fee plan.
+            </Alert>
+          )}
           {result.skipped > 0 && onDuplicate === "skip" && (
             <p className="text-sm text-muted">
               Skipped rows have an admission number that already exists. Import again with “Update existing students” to overwrite them.
@@ -247,6 +255,10 @@ export function ImportDrawer({ onClose, onImported }: { onClose: () => void; onI
                 Required columns: <strong className="text-foreground">Admission no</strong> and{" "}
                 <strong className="text-foreground">First name</strong> (or a single <strong className="text-foreground">Name</strong>{" "}
                 column). Dates can be YYYY-MM-DD, DD/MM/YYYY or Excel dates.
+              </p>
+              <p>
+                Optional <strong className="text-foreground">Fees paid</strong> column (with <strong className="text-foreground">Fees paid date</strong> and{" "}
+                <strong className="text-foreground">Payment mode</strong>): money a new student already paid. It&apos;s kept as advance and pays their fees when you assign a fee plan. Only added for new students, never twice.
               </p>
               <div className="flex flex-wrap items-center gap-2">
                 <span>Download template:</span>

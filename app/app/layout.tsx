@@ -71,7 +71,7 @@ const ACTIONS: (Omit<PaletteItem, "group"> & { roles?: string[]; feature?: Featu
   { id: "a:notice", label: "Post a notice", hint: "To staff or parents", icon: NAV_ICONS.notices, href: "/app/notices?new=1", roles: TEACHING },
   { id: "a:fee", label: "Collect fee", hint: "Record a payment and print a receipt", icon: "M7 4h10M7 8h10M7 4c4 0 6 2 6 4s-2 4-6 4l7 8", href: "/app/fees", roles: ["owner", "admin", "accountant"] },
   { id: "a:student", label: "Add student", icon: ICONS.plus, href: "/app/students", roles: ["owner", "admin"] },
-  { id: "a:account", label: "Change my password", icon: USER_ICON, href: "/app/settings#account" },
+  { id: "a:account", label: "Change my password", icon: USER_ICON, href: "/app/settings/account" },
 ];
 
 /** Unread staff notices for the bell; refreshed every few minutes and when notices are read. */
@@ -470,7 +470,7 @@ export default function AppLayout({ children }: LayoutProps<"/app">) {
                 <Icon d={ICONS.chevronRight} className="text-muted" />
               </Link>
             )}
-            <Link href="/app/settings#account" onClick={() => setMenuOpen(false)} className="flex items-center gap-3 px-4 py-3 text-sm hover:bg-surface-muted">
+            <Link href="/app/settings/account" onClick={() => setMenuOpen(false)} className="flex items-center gap-3 px-4 py-3 text-sm hover:bg-surface-muted">
               <Icon d={USER_ICON} className="text-muted" />
               <span className="flex-1">My account</span>
               <Icon d={ICONS.chevronRight} className="text-muted" />
@@ -571,7 +571,7 @@ function UserMenu({ collapsed, initials, name, email, onSignOut }: { collapsed: 
             </div>
           </div>
           <div className="my-1 h-px bg-border" />
-          <Link role="menuitem" href="/app/settings#account" onClick={() => setOpen(false)} className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm hover:bg-surface-muted">
+          <Link role="menuitem" href="/app/settings/account" onClick={() => setOpen(false)} className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm hover:bg-surface-muted">
             <Icon d={USER_ICON} className="text-muted" />
             My account
           </Link>

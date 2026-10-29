@@ -44,6 +44,8 @@ export interface ImportResult {
   updated: number;
   skipped: number;
   failed: { row: number; admissionNo: string; errors: { field: string; message: string }[] }[];
+  /** Fees already paid, recorded for new students in the file */
+  feesRecorded?: { students: number; amount: number };
 }
 
 /** Fields that can be written through the API, in template/column order. */
@@ -68,6 +70,20 @@ export const STUDENT_FIELDS = [
 ] as const;
 
 export type StudentField = (typeof STUDENT_FIELDS)[number]["key"];
+
+/**
+ * Import-only columns: fees a new student already paid (recorded as paid before EduFlow,
+ * kept as advance until a fee plan is assigned). Not part of the student export.
+ */
+export const FEE_IMPORT_FIELDS = [
+  { key: "feesPaid", label: "Fees paid" },
+  { key: "feesPaidDate", label: "Fees paid date" },
+  { key: "feesPaidMode", label: "Payment mode" },
+  { key: "feesNote", label: "Fees note" },
+] as const;
+
+export type ImportField = StudentField | (typeof FEE_IMPORT_FIELDS)[number]["key"];
+export const IMPORT_FIELDS: readonly { key: ImportField; label: string }[] = [...STUDENT_FIELDS, ...FEE_IMPORT_FIELDS];
 
 // ---------------------------------------------------------------------------
 // CSV
@@ -128,9 +144,9 @@ export function toCsv(rows: string[][]) {
 /** Header + two example rows, used for the downloadable CSV / Excel template. */
 export function templateRows(): string[][] {
   return [
-    STUDENT_FIELDS.map((f) => f.label),
-    ["ADM-001", "Aarav", "Sharma", "male", "2014-03-21", "5", "A", "12", "", "", "Rohit Sharma", "9876543210", "rohit@example.com", "12 MG Road, Pune", "2024-04-01", "active", ""],
-    ["ADM-002", "Zara", "Khan", "female", "2013-08-21", "6", "B", "4", "", "", "Imran Khan", "9123456780", "", "", "", "", "Scholarship"],
+    IMPORT_FIELDS.map((f) => f.label),
+    ["ADM-001", "Aarav", "Sharma", "male", "2014-03-21", "5", "A", "12", "", "", "Rohit Sharma", "9876543210", "rohit@example.com", "12 MG Road, Pune", "2024-04-01", "active", "", "5000", "2026-04-10", "cash", "Old receipt 1234"],
+    ["ADM-002", "Zara", "Khan", "female", "2013-08-21", "6", "B", "4", "", "", "Imran Khan", "9123456780", "", "", "", "", "Scholarship", "", "", "", ""],
   ];
 }
 
@@ -153,7 +169,7 @@ export function studentsToRows(students: Student[], fields: StudentField[]): str
 }
 
 // Header aliases, compared after lowercasing and removing everything but letters/digits
-const ALIASES: Record<StudentField, string[]> = {
+const ALIASES: Record<ImportField, string[]> = {
   admissionNo: ["admissionno", "admissionnumber", "admno", "admissionid", "studentid", "regno", "registrationno", "enrollmentno"],
   firstName: ["firstname", "fname", "givenname", "studentfirstname"],
   lastName: ["lastname", "lname", "surname", "familyname", "studentlastname"],
@@ -171,6 +187,10 @@ const ALIASES: Record<StudentField, string[]> = {
   admissionDate: ["admissiondate", "joiningdate", "dateofadmission", "joindate", "enrolleddate"],
   status: ["status"],
   notes: ["notes", "remarks", "note", "comments"],
+  feesPaid: ["feespaid", "feepaid", "paidfees", "paid", "amountpaid", "paidamount", "advance", "openingbalance", "feesreceived", "feereceived"],
+  feesPaidDate: ["feespaiddate", "feepaiddate", "paiddate", "paymentdate", "datepaid", "feesdate"],
+  feesPaidMode: ["paymentmode", "paymode", "mode", "feesmode", "paidby", "paymentmethod"],
+  feesNote: ["feesnote", "feenote", "paymentnote", "receiptno", "oldreceiptno", "feesremarks"],
 };
 
 const FULL_NAME_HEADERS = ["name", "fullname", "studentname"];
@@ -179,20 +199,20 @@ const normalizeHeader = (h: string) => h.toLowerCase().replace(/[^a-z0-9]/g, "")
 
 export interface ColumnMapping {
   /** Index of each recognised field in the CSV row */
-  columns: Partial<Record<StudentField, number>>;
+  columns: Partial<Record<ImportField, number>>;
   /** A single "Name" column split into first/last when no first-name column exists */
   fullNameColumn: number | null;
   ignored: string[];
 }
 
 export function mapColumns(header: string[]): ColumnMapping {
-  const columns: Partial<Record<StudentField, number>> = {};
+  const columns: Partial<Record<ImportField, number>> = {};
   let fullNameColumn: number | null = null;
   const ignored: string[] = [];
 
   header.forEach((raw, index) => {
     const h = normalizeHeader(raw);
-    const field = (Object.keys(ALIASES) as StudentField[]).find((f) => f.toLowerCase() === h || ALIASES[f].includes(h));
+    const field = (Object.keys(ALIASES) as ImportField[]).find((f) => f.toLowerCase() === h || ALIASES[f].includes(h));
     if (field && columns[field] === undefined) columns[field] = index;
     else if (FULL_NAME_HEADERS.includes(h) && fullNameColumn === null) fullNameColumn = index;
     else if (raw.trim()) ignored.push(raw.trim());
@@ -213,6 +233,17 @@ function normalizeDate(value: string) {
   return `${y}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`;
 }
 
+/** "GPay", "Bank transfer", "NEFT"… → the app's payment modes. */
+function normalizeMode(value: string) {
+  const v = value.toLowerCase().replace(/[^a-z]/g, "");
+  if (["upi", "gpay", "googlepay", "phonepe", "paytm", "bhim", "online"].includes(v)) return "upi";
+  if (["bank", "banktransfer", "neft", "rtgs", "imps", "transfer"].includes(v)) return "bank";
+  if (["cheque", "check", "chq", "dd", "demanddraft"].includes(v)) return "cheque";
+  if (["card", "debitcard", "creditcard", "pos"].includes(v)) return "card";
+  if (["cash"].includes(v)) return "cash";
+  return v ? "other" : "";
+}
+
 function normalizeGender(value: string) {
   const v = value.toLowerCase();
   if (v === "m" || v === "boy") return "male";
@@ -224,10 +255,11 @@ function normalizeGender(value: string) {
 export function rowsToStudents(rows: string[][], mapping: ColumnMapping) {
   return rows.map((row) => {
     const out: Record<string, string> = {};
-    for (const [field, index] of Object.entries(mapping.columns) as [StudentField, number][]) {
+    for (const [field, index] of Object.entries(mapping.columns) as [ImportField, number][]) {
       let value = (row[index] ?? "").trim();
       if (!value) continue;
-      if (field === "dateOfBirth" || field === "admissionDate") value = normalizeDate(value);
+      if (field === "dateOfBirth" || field === "admissionDate" || field === "feesPaidDate") value = normalizeDate(value);
+      if (field === "feesPaidMode") value = normalizeMode(value);
       if (field === "gender") value = normalizeGender(value);
       if (field === "status") value = value.toLowerCase();
       out[field] = value;

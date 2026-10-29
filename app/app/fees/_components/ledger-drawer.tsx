@@ -48,11 +48,14 @@ export function LedgerDrawer({
     }
   }
 
-  async function removePlan(planId: string, name: string) {
-    if (!confirm(`Remove “${name}” from this student? All its unpaid dues for them are deleted.`)) return;
+  async function removePlan(planId: string, name: string, paid: number) {
+    if (!confirm(`Remove “${name}” from this student? Its dues are deleted.${paid ? ` The ${formatMoney(paid)} already paid on it becomes advance and goes to their other fees.` : ""}`)) return;
     try {
-      const res = await api<{ duesDeleted: number }>(`/api/fees/students/${studentId}/plans/${planId}`, { method: "DELETE" });
-      setMessage({ tone: "success", text: `“${name}” removed (${res.duesDeleted} due${res.duesDeleted === 1 ? "" : "s"}).` });
+      const res = await api<{ duesDeleted: number; movedToAdvance: number }>(`/api/fees/students/${studentId}/plans/${planId}`, { method: "DELETE" });
+      setMessage({
+        tone: "success",
+        text: `“${name}” removed (${res.duesDeleted} due${res.duesDeleted === 1 ? "" : "s"}).${res.movedToAdvance ? ` ${formatMoney(res.movedToAdvance)} paid on it is now advance.` : ""}`,
+      });
       ledger.reload();
       onChanged();
     } catch (err) {
@@ -61,10 +64,10 @@ export function LedgerDrawer({
   }
 
   async function removeDue(d: Due) {
-    if (!confirm(`Remove “${d.label}” (${formatMoney(d.amount)}) from this student?`)) return;
+    if (!confirm(`Remove “${d.label}” (${formatMoney(d.amount)}) from this student?${d.paid ? ` The ${formatMoney(d.paid)} paid on it becomes advance.` : ""}`)) return;
     try {
       await api(`/api/fees/dues/${d.id}`, { method: "DELETE" });
-      setMessage({ tone: "success", text: `${d.label} removed.` });
+      setMessage({ tone: "success", text: `${d.label} removed.${d.paid ? ` ${formatMoney(d.paid)} is now advance.` : ""}` });
       ledger.reload();
       onChanged();
     } catch (err) {
@@ -77,16 +80,15 @@ export function LedgerDrawer({
       title="Fee account"
       onClose={onClose}
       footer={
-        data &&
-        data.totals.balance > 0 && (
+        data && (
           <div className="flex items-center justify-between gap-3">
             <div className="text-sm">
               <p className="text-muted">Balance</p>
               <p className="text-lg font-semibold tabular-nums">{formatMoney(data.totals.balance)}</p>
             </div>
-            <Button onClick={onCollect} className="min-w-36">
+            <Button onClick={onCollect} variant={data.totals.balance > 0 ? "primary" : "secondary"} className="min-w-36">
               <Icon d={ICONS.plus} />
-              Collect fee
+              {data.totals.balance > 0 ? "Collect fee" : "Record advance"}
             </Button>
           </div>
         )
@@ -123,6 +125,18 @@ export function LedgerDrawer({
               </div>
             ))}
           </div>
+
+          {(data.totals.advance ?? 0) > 0 && (
+            <div className="flex items-center gap-3 rounded-xl border border-success/40 bg-success-soft px-4 py-3">
+              <span className="grid size-9 shrink-0 place-items-center rounded-full bg-success text-white">
+                <Icon d="M12 3v18M17 7.5C17 5.6 14.8 4.5 12 4.5S7 5.6 7 7.5 9.2 10.3 12 11s5 1.6 5 3.5-2.2 3-5 3-5-1.1-5-3" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-success">Advance {formatMoney(data.totals.advance!)}</p>
+                <p className="text-xs text-muted">Already paid, not on any fee yet. Pays the next fees automatically when a fee plan is assigned.</p>
+              </div>
+            </div>
+          )}
 
           {/* Standing concession: one place for "this student pays less" */}
           <div className={cx("flex items-center gap-3 rounded-xl border px-4 py-3", s.concession ? "border-success/40 bg-success-soft" : "border-dashed border-border")}>
@@ -221,11 +235,9 @@ export function LedgerDrawer({
                       <Icon d={ICONS.edit} />
                       Edit plan
                     </Button>
-                    {paid === 0 && (
-                      <Button size="sm" variant="ghost" className="text-danger" onClick={() => removePlan(planId, name)}>
-                        Remove
-                      </Button>
-                    )}
+                    <Button size="sm" variant="ghost" className="text-danger" onClick={() => removePlan(planId, name, paid)}>
+                      Remove
+                    </Button>
                   </div>
                 );
               })}
@@ -312,11 +324,9 @@ export function LedgerDrawer({
                         <button className="font-medium text-accent hover:underline" onClick={() => setEditing(editing === d.id ? null : d.id)}>
                           Edit concession / due date
                         </button>
-                        {d.paid === 0 && (
-                          <button className="font-medium text-danger hover:underline" onClick={() => removeDue(d)}>
-                            Remove
-                          </button>
-                        )}
+                        <button className="font-medium text-danger hover:underline" onClick={() => removeDue(d)}>
+                          Remove
+                        </button>
                       </div>
                     </details>
                     {editing === d.id && (
@@ -349,9 +359,11 @@ export function LedgerDrawer({
                         <span className="flex items-center gap-2">
                           <span className="font-mono text-sm font-medium">{p.receiptNo}</span>
                           {p.voided && <Badge tone="danger">Void</Badge>}
+                          {p.kind === "opening" && <Badge>Paid before EduFlow</Badge>}
                         </span>
                         <span className="block text-xs text-muted">
                           {formatDay(p.date, "short")} · {MODE_LABEL[p.mode]}
+                          {!p.voided && (p.advance ?? 0) > 0 && <span className="text-success"> · {formatMoney(p.advance!)} advance</span>}
                         </span>
                       </span>
                       <span className={cx("font-medium tabular-nums", p.voided && "text-muted line-through")}>{formatMoney(p.amount)}</span>
@@ -430,8 +442,10 @@ function AddPlan({ studentId, has, onCancel, onAdded }: { studentId: string; has
     setBusy(true);
     setError(null);
     try {
-      await api(`/api/fees/plans/${chosen.id}/assign`, { method: "POST", body: { studentIds: [studentId] } });
-      onAdded(`“${chosen.name}” added (${chosen.installments.length} due${chosen.installments.length === 1 ? "" : "s"}).`);
+      const res = await api<{ advanceApplied?: number }>(`/api/fees/plans/${chosen.id}/assign`, { method: "POST", body: { studentIds: [studentId] } });
+      onAdded(
+        `“${chosen.name}” added (${chosen.installments.length} due${chosen.installments.length === 1 ? "" : "s"}).${res.advanceApplied ? ` ${formatMoney(res.advanceApplied)} advance was applied to it.` : ""}`
+      );
     } catch (err) {
       setError(errorMessage(err));
     } finally {

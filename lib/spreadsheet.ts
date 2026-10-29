@@ -62,7 +62,16 @@ export async function downloadSpreadsheet(
   baseName: string,
   rows: string[][],
   format: SpreadsheetFormat,
-  { dateColumns = [], sheetName = "Sheet1" }: { dateColumns?: number[]; sheetName?: string } = {}
+  {
+    dateColumns = [],
+    sheetName = "Sheet1",
+    extraSheets = [],
+  }: {
+    dateColumns?: number[];
+    sheetName?: string;
+    /** More sheets after the first, e.g. instructions (Excel only) */
+    extraSheets?: { name: string; rows: string[][] }[];
+  } = {}
 ) {
   if (format === "csv") {
     // BOM so Excel opens UTF-8 names (e.g. Hindi, Urdu) correctly
@@ -88,5 +97,10 @@ export async function downloadSpreadsheet(
 
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, sheet, sheetName.slice(0, 31));
+  for (const extra of extraSheets) {
+    const ws = XLSX.utils.aoa_to_sheet(extra.rows);
+    ws["!cols"] = [{ wch: 90 }];
+    XLSX.utils.book_append_sheet(workbook, ws, extra.name.slice(0, 31));
+  }
   XLSX.writeFile(workbook, `${baseName}.xlsx`, { compression: true });
 }

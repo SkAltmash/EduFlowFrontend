@@ -43,6 +43,61 @@ export async function shareNodeAsImage(node: HTMLElement, fileName: string, titl
   return "downloaded" as const;
 }
 
+/** A one-page PDF (A5, or A4 with `size`) of an element, as a File. */
+export async function nodeToPdf(node: HTMLElement, fileName: string, size: "a5" | "a4" = "a5") {
+  const [{ toPng }, { jsPDF }] = await Promise.all([import("html-to-image"), import("jspdf")]);
+  const png = await toPng(node, { pixelRatio: 2, backgroundColor: "#ffffff", cacheBust: true });
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const i = new Image();
+    i.onload = () => resolve(i);
+    i.onerror = reject;
+    i.src = png;
+  });
+  const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: size });
+  const pageW = pdf.internal.pageSize.getWidth();
+  const pageH = pdf.internal.pageSize.getHeight();
+  const margin = 8;
+  // Fit the width, then shrink further if it would run off the page
+  let w = pageW - margin * 2;
+  let h = (img.height / img.width) * w;
+  if (h > pageH - margin * 2) {
+    h = pageH - margin * 2;
+    w = (img.width / img.height) * h;
+  }
+  pdf.addImage(png, "PNG", (pageW - w) / 2, margin, w, h, undefined, "FAST");
+  pdf.setProperties({ title: fileName });
+  return new File([pdf.output("blob")], `${fileName}.pdf`, { type: "application/pdf" });
+}
+
+/** Shares a file through the phone's share sheet when possible, else downloads it. */
+export async function shareOrDownload(file: File, title: string, preferShare = true) {
+  if (preferShare && navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title, text: title });
+      return "shared" as const;
+    } catch (err) {
+      if ((err as Error).name === "AbortError") return "cancelled" as const;
+      throw err;
+    }
+  }
+  const url = URL.createObjectURL(file);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = file.name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return "downloaded" as const;
+}
+
+/** Whether this device can share files (phones, some desktops). */
+export function canShareFiles() {
+  try {
+    return typeof navigator !== "undefined" && Boolean(navigator.canShare?.({ files: [new File([""], "x.pdf", { type: "application/pdf" })] }));
+  } catch {
+    return false;
+  }
+}
+
 /** "Share image" button for any on-screen document. */
 export function ShareImageButton({ nodeRef, fileName, title }: { nodeRef: RefObject<HTMLElement | null>; fileName: string; title: string }) {
   const [busy, setBusy] = useState(false);

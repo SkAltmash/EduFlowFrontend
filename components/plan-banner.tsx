@@ -141,7 +141,7 @@ export function PlanBanners({ canManage }: { canManage: boolean }) {
           Free trial: {sub.daysLeft === 0 ? "ends today" : sub.daysLeft === 1 ? "1 day left" : `${sub.daysLeft} days left`}.
         </span>{" "}
         {soon ? "Choose a plan to keep everything running." : `You're trying the ${sub.planName ?? "EduFlow"} plan.`}{" "}
-        <Link href="/app/settings#billing" className="font-semibold text-accent hover:underline">
+        <Link href="/app/settings/billing" className="font-semibold text-accent hover:underline">
           See plans →
         </Link>
       </Banner>

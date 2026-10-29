@@ -159,10 +159,12 @@ export function ConcessionDrawer({
   const open = dues.filter((d) => d.balance > 0);
   const preview = open.map((d) => {
     const handEdited = d.discountSource === "manual";
-    const after = handEdited ? d.discount : Math.min(concessionDiscount(d.amount, concession), d.amount - d.paid);
+    // Server gives part-paid dues the full concession; anything paid beyond the new fee becomes advance
+    const after = handEdited ? d.discount : concessionDiscount(d.amount, concession);
     return { d, before: d.amount - d.discount, after: d.amount - after };
   });
   const saving = preview.reduce((t, p) => t + Math.max(0, p.before - p.after), 0);
+  const toAdvance = preview.reduce((t, p) => t + Math.max(0, p.d.paid - p.after), 0);
 
   async function save(c: Concession | null) {
     setBusy(true);
@@ -239,7 +241,8 @@ export function ConcessionDrawer({
             ))}
           </ul>
         )}
-        <p className="mt-2 text-xs text-muted">Paid dues aren&apos;t changed. A concession set on a single due by hand is kept.</p>
+        {toAdvance > 0 && <p className="mt-2 rounded-lg bg-success-soft px-3 py-2 text-xs text-success">{formatMoney(toAdvance)} already paid is more than the new fee, so it becomes advance for their next fees.</p>}
+        <p className="mt-2 text-xs text-muted">Fully paid dues aren&apos;t changed. A concession set on a single due by hand is kept.</p>
       </div>
     </Drawer>
   );

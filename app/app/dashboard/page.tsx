@@ -255,7 +255,7 @@ function GettingStarted({ canManage, canMark, seesFees }: { canManage: boolean; 
     { href: "/app/students", title: "Add your students", text: "One by one, or import an Excel or CSV file.", show: true },
     { href: "/app/attendance", title: "Mark today's attendance", text: "Pick a class and tap present or absent.", show: canMark },
     { href: "/app/fees", title: "Set up fee plans", text: "Create a plan, assign it to a class, collect and print receipts.", show: seesFees },
-    { href: "/app/settings", title: "Connect WhatsApp", text: "Send receipts, reminders and report cards to parents.", show: canManage },
+    { href: "/app/settings/whatsapp", title: "Connect WhatsApp", text: "Send receipts, reminders and report cards to parents.", show: canManage },
   ].filter((s) => s.show);
   return (
     <section className="rounded-xl border border-accent/30 bg-accent-soft/50 p-4 sm:p-5">

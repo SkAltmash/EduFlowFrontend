@@ -138,6 +138,7 @@ export function CollectDrawer({
       >
         <Alert tone="success">
           {formatMoney(receipt.payment.amount)} received from {receipt.payment.student.fullName}. Receipt {receipt.payment.receiptNo}.
+          {(receipt.payment.advance ?? 0) > 0 && ` ${formatMoney(receipt.payment.advance!)} is kept as advance for their next fees.`}
         </Alert>
         <ReceiptShare receipt={receipt} docRef={docRef} />
         <ReceiptDocument receipt={receipt} ref={docRef} />
@@ -207,15 +208,10 @@ function CollectForm({
     left -= take;
   }
 
-  const amountError =
-    amountValue && amount === null
-      ? "Enter a valid amount"
-      : amount !== null && amount > selectedTotal
-        ? `More than the selected dues (${formatMoney(selectedTotal)})`
-        : amount === 0
-          ? "Amount must be more than zero"
-          : null;
-  const canSubmit = amount !== null && amount > 0 && !amountError && allocations.length > 0;
+  const amountError = amountValue && amount === null ? "Enter a valid amount" : amount === 0 ? "Amount must be more than zero" : null;
+  // Anything beyond the selected dues is kept as the student's advance
+  const extra = amount !== null ? Math.max(0, amount - selectedTotal) : 0;
+  const canSubmit = amount !== null && amount > 0 && !amountError;
 
   function toggle(id: string) {
     setDeselected((s) => {
@@ -274,7 +270,7 @@ function CollectForm({
       }
       onClose={onClose}
       footer={
-        open.length > 0 && (
+        ledger.data && (
           <Button onClick={submit} loading={busy} disabled={!canSubmit} className="h-12 w-full text-base">
             {canSubmit ? `Record ${formatMoney(amount!)} · ${MODE_LABEL[mode]}` : "Record payment"}
           </Button>
@@ -301,18 +297,18 @@ function CollectForm({
             <div className="text-right">
               <p className="text-xs text-muted">Balance</p>
               <p className={cx("font-semibold tabular-nums", ledger.data.totals.overdue > 0 && "text-danger")}>{formatMoney(ledger.data.totals.balance)}</p>
+              {(ledger.data.totals.advance ?? 0) > 0 && <p className="text-xs font-medium text-success">Advance {formatMoney(ledger.data.totals.advance!)}</p>}
             </div>
           </div>
 
           {error && <Alert>{error}</Alert>}
 
-          {open.length === 0 ? (
-            <div className="rounded-xl border border-border bg-surface px-6 py-10 text-center">
-              <p className="font-medium">Nothing to collect</p>
-              <p className="mt-1 text-sm text-muted">This student has no unpaid dues.</p>
-            </div>
-          ) : (
-            <form
+          {open.length === 0 && (
+            <p className="rounded-xl bg-accent-soft px-4 py-3 text-sm">
+              <strong>No dues right now.</strong> Anything you record is kept as advance and pays their fees automatically when a fee plan is assigned.
+            </p>
+          )}
+          <form
               className="space-y-5"
               onSubmit={(e) => {
                 e.preventDefault();
@@ -345,8 +341,19 @@ function CollectForm({
                     className="h-14 w-full bg-transparent pl-7 text-4xl font-semibold tabular-nums tracking-tight outline-none"
                   />
                 </div>
-                <p className={cx("mt-1 text-xs", amountError ? "text-danger" : "text-muted")}>
-                  {amountError ?? (amount && amount < selectedTotal ? `Part payment · ${formatMoney(selectedTotal - amount)} will still be due` : `Clears all ${selected.length} selected due${selected.length === 1 ? "" : "s"}`)}
+                <p className={cx("mt-1 text-xs", amountError ? "text-danger" : extra > 0 ? "font-medium text-success" : "text-muted")}>
+                  {amountError ??
+                    (!amount
+                      ? open.length
+                        ? "Enter the amount received"
+                        : "Enter the amount paid in advance"
+                      : extra > 0
+                        ? selectedTotal
+                          ? `Clears the selected dues · ${formatMoney(extra)} extra kept as advance`
+                          : `${formatMoney(extra)} kept as advance`
+                        : amount < selectedTotal
+                          ? `Part payment · ${formatMoney(selectedTotal - amount)} will still be due`
+                          : `Clears all ${selected.length} selected due${selected.length === 1 ? "" : "s"}`)}
                 </p>
                 {chips.length > 1 && (
                   <div className="mt-3 flex flex-wrap gap-1.5">
@@ -397,7 +404,8 @@ function CollectForm({
               </div>
 
               {/* Where it goes */}
-              <Section title="Goes to (oldest first)">
+              {open.length > 0 && (
+                <Section title="Goes to (oldest first)">
                 <ul className="divide-y divide-border rounded-xl border border-border bg-surface">
                   {open.map((d) => {
                     const checked = !deselected.has(d.id);
@@ -428,7 +436,8 @@ function CollectForm({
                     );
                   })}
                 </ul>
-              </Section>
+                </Section>
+              )}
 
               {/* Rarely changed */}
               <div>
@@ -451,8 +460,7 @@ function CollectForm({
                   </div>
                 )}
               </div>
-            </form>
-          )}
+          </form>
         </>
       )}
     </Drawer>

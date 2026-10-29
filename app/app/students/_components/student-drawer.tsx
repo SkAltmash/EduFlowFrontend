@@ -17,7 +17,9 @@ import {
   localToday,
   type StudentAttendance,
 } from "@/lib/attendance";
+import { MODE_LABEL, MODE_REFERENCE, PAYMENT_MODES, formatMoney, parseMoney, type Payment, type PaymentMode } from "@/lib/fees";
 import { GENDERS, STUDENT_STATUSES, type Student } from "@/lib/students";
+import { MoneyInput } from "@/app/app/fees/_components/collect-drawer";
 import { Avatar, STATUS_LABEL, StatusBadge, classLabel } from "./bits";
 import { StudentClassroom } from "./student-classroom";
 
@@ -114,6 +116,10 @@ function StudentForm({ initial, canManage, onClose, onSaved }: Props & { initial
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<{ tone: "success" | "danger"; text: string } | null>(null);
   const [busy, setBusy] = useState<"save" | "delete" | null>(null);
+  // New student only: fees they've already paid
+  const [fees, setFees] = useState<FeesPaidDraft>(EMPTY_FEES);
+  const feesPaid = !student && fees.on ? feesPayload(fees) : null;
+  const feesInvalid = !student && fees.on && !feesPaid;
 
   // The school's class list; until one exists, class and section are typed freely
   const classList = useResource(loadClassList, "academics-classes");
@@ -144,6 +150,7 @@ function StudentForm({ initial, canManage, onClose, onSaved }: Props & { initial
     const local: Record<string, string> = {};
     if (!form.admissionNo.trim()) local.admissionNo = "Admission number is required";
     if (!form.firstName.trim()) local.firstName = "First name is required";
+    if (feesInvalid) local.feesPaid = "Enter the amount already paid";
     setErrors(local);
     if (Object.keys(local).length) return;
 
@@ -152,13 +159,20 @@ function StudentForm({ initial, canManage, onClose, onSaved }: Props & { initial
     try {
       const body = toPayload(form, original);
       const res = student
-        ? await api<{ student: Student }>(`/api/students/${student.id}`, { method: "PATCH", body })
-        : await api<{ student: Student }>("/api/students", { method: "POST", body });
+        ? await api<{ student: Student; payment?: Payment }>(`/api/students/${student.id}`, { method: "PATCH", body })
+        : await api<{ student: Student; payment?: Payment }>("/api/students", { method: "POST", body: { ...body, ...(feesPaid ? { feesPaid } : {}) } });
       onSaved();
       setStudent(res.student);
       setForm(toForm(res.student));
       setMode("view");
-      setMessage({ tone: "success", text: student ? "Changes saved" : "Student added" });
+      setMessage({
+        tone: "success",
+        text: student
+          ? "Changes saved"
+          : res.payment
+            ? `Student added. ${formatMoney(res.payment.amount)} already paid is kept as advance (${res.payment.receiptNo}); it pays their fees as soon as a fee plan is assigned.`
+            : "Student added",
+      });
     } catch (err) {
       if (err instanceof ApiError && err.code === "ADMISSION_NO_TAKEN") setErrors({ admissionNo: err.message });
       else if (err instanceof ApiError && err.details?.length) setErrors(fieldErrors(err.details));
@@ -314,6 +328,8 @@ function StudentForm({ initial, canManage, onClose, onSaved }: Props & { initial
           </div>
         </Section>
 
+        {!student && <FeesPaidSection value={fees} onChange={setFees} error={errors.feesPaid} />}
+
         <Section title="Notes">
           <textarea
             id="s-notes"
@@ -326,6 +342,95 @@ function StudentForm({ initial, canManage, onClose, onSaved }: Props & { initial
         </Section>
       </form>
     </Drawer>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Fees already paid (new students)
+// ---------------------------------------------------------------------------
+
+interface FeesPaidDraft {
+  on: boolean;
+  amount: string;
+  date: string;
+  mode: PaymentMode;
+  reference: string;
+  kind: "opening" | "receipt";
+}
+
+const EMPTY_FEES: FeesPaidDraft = { on: false, amount: "", date: "", mode: "cash", reference: "", kind: "opening" };
+
+function feesPayload(f: FeesPaidDraft) {
+  const amount = parseMoney(f.amount);
+  if (!amount || amount <= 0) return null;
+  return { amount, date: f.date || localToday(), mode: f.mode, reference: f.reference.trim(), kind: f.kind };
+}
+
+/** Optional: what a new student has already paid. Kept as advance until a fee plan is assigned. */
+function FeesPaidSection({ value: f, onChange, error }: { value: FeesPaidDraft; onChange: (f: FeesPaidDraft) => void; error?: string }) {
+  const set = (patch: Partial<FeesPaidDraft>) => onChange({ ...f, ...patch });
+  return (
+    <Section title="Fees">
+      <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-border bg-surface px-4 py-3">
+        <input type="checkbox" className="mt-0.5 size-4 accent-accent" checked={f.on} onChange={(e) => set({ on: e.target.checked })} />
+        <span>
+          <span className="block text-sm font-medium">Already paid some fees</span>
+          <span className="block text-xs text-muted">Kept as advance. When you assign a fee plan, it pays the first installments automatically.</span>
+        </span>
+      </label>
+      {f.on && (
+        <div className="mt-3 space-y-4 rounded-xl border border-accent/30 bg-accent-soft/30 p-4">
+          <div className="grid grid-cols-2 gap-2">
+            {(
+              [
+                ["opening", "Paid earlier", "Has a paper receipt. Not counted in today's collection."],
+                ["receipt", "Collecting now", "Gives an EduFlow receipt."],
+              ] as const
+            ).map(([kind, label, hint]) => (
+              <button
+                key={kind}
+                type="button"
+                onClick={() => set({ kind, date: kind === "receipt" ? "" : f.date })}
+                aria-pressed={f.kind === kind}
+                className={cx("rounded-xl border px-3 py-2.5 text-left transition-colors", f.kind === kind ? "border-accent bg-surface" : "border-border bg-surface/60 hover:bg-surface")}
+              >
+                <span className={cx("block text-sm font-medium", f.kind === kind && "text-accent")}>{label}</span>
+                <span className="block text-xs text-muted">{hint}</span>
+              </button>
+            ))}
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Amount paid *" htmlFor="fees-amount" error={error}>
+              <MoneyInput id="fees-amount" value={f.amount} onChange={(v) => set({ amount: v })} invalid={Boolean(error)} />
+            </Field>
+            <Field label="Date paid" htmlFor="fees-date" hint="Empty = today">
+              <Input id="fees-date" type="date" max={localToday()} value={f.date} onChange={(e) => set({ date: e.target.value })} />
+            </Field>
+          </div>
+          <div>
+            <p className="mb-2 text-sm font-medium">Paid by</p>
+            <div className="flex flex-wrap gap-1.5">
+              {PAYMENT_MODES.map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  aria-pressed={f.mode === m}
+                  onClick={() => set({ mode: m })}
+                  className={cx("h-9 rounded-full border px-3 text-sm transition-colors", f.mode === m ? "border-accent bg-accent-soft font-medium text-accent" : "border-border bg-surface hover:bg-surface-muted")}
+                >
+                  {MODE_LABEL[m]}
+                </button>
+              ))}
+            </div>
+          </div>
+          {(MODE_REFERENCE[f.mode] || f.kind === "opening") && (
+            <Field label={f.kind === "opening" ? "Old receipt no / reference" : MODE_REFERENCE[f.mode] || "Reference"} htmlFor="fees-ref" hint="Optional">
+              <Input id="fees-ref" value={f.reference} onChange={(e) => set({ reference: e.target.value })} maxLength={100} autoComplete="off" />
+            </Field>
+          )}
+        </div>
+      )}
+    </Section>
   );
 }
 

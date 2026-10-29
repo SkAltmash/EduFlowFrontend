@@ -53,7 +53,7 @@ export function Payments({ refreshKey, onOpen }: { refreshKey: number; onOpen: (
           p.reference,
           p.allocations.map((a) => `${a.label} (${(a.amount / 100).toFixed(2)})`).join("; "),
           p.receivedByName,
-          p.voided ? "Void" : "Valid",
+          p.voided ? "Void" : p.kind === "opening" ? "Paid before EduFlow" : "Valid",
           p.voided?.reason ?? "",
         ]),
       ];
@@ -181,6 +181,7 @@ export function Payments({ refreshKey, onOpen }: { refreshKey: number; onOpen: (
                       <div className="flex items-center gap-2 font-mono font-medium">
                         {p.receiptNo}
                         {p.voided && <Badge tone="danger">Void</Badge>}
+                        {p.kind === "opening" && <Badge>Before EduFlow</Badge>}
                       </div>
                       <div className="text-xs text-muted">{formatDay(p.date, "short")}</div>
                     </td>
@@ -210,6 +211,7 @@ export function Payments({ refreshKey, onOpen }: { refreshKey: number; onOpen: (
                       <span className="flex items-center gap-1.5 text-xs text-muted">
                         <span className="font-mono">{p.receiptNo}</span> · {formatDay(p.date, "short")} · {MODE_LABEL[p.mode]}
                         {p.voided && <Badge tone="danger">Void</Badge>}
+                        {p.kind === "opening" && <Badge>Before EduFlow</Badge>}
                       </span>
                     </span>
                     <span className={cx("shrink-0 font-medium tabular-nums", p.voided && "text-muted line-through")}>{formatMoney(p.amount)}</span>

@@ -72,6 +72,10 @@ export interface Payment {
   student: { fullName: string; admissionNo: string; grade: string; section: string; guardianName: string };
   date: string;
   amount: number;
+  /** "opening": paid before the school used EduFlow (not counted in collections) */
+  kind?: "receipt" | "opening";
+  /** Part of this payment not on any due yet */
+  advance?: number;
   mode: PaymentMode;
   reference: string;
   note: string;
@@ -122,6 +126,10 @@ export interface Receipt {
   payment: Payment;
   school: { name: string };
   currentBalance: number;
+  /** The student's advance right now */
+  currentAdvance?: number;
+  /** Their whole fee account right now */
+  account?: { fee: number; paid: number; balance: number; advance: number };
   /** Concessions on the dues this payment went to */
   concessions?: { label: string; planName: string; fee: number; discount: number; reason: string }[];
 }
@@ -145,6 +153,8 @@ export interface RegisterRow extends FeeTotals {
   guardianName: string;
   guardianPhone: string;
   dues: number;
+  /** Paid but not on any due yet */
+  advance?: number;
   nextDue: string | null;
 }
 
@@ -152,7 +162,7 @@ export interface Ledger {
   student: { id: string; fullName: string; admissionNo: string; grade: string; section: string; guardianName: string; guardianPhone: string; status: string; concession?: Concession | null };
   dues: Due[];
   payments: Payment[];
-  totals: FeeTotals;
+  totals: FeeTotals & { advance?: number };
 }
 
 export interface FeeSummary {

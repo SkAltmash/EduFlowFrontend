@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { resetTenantStatus } from "@/components/plan-banner";
+import { forgetSchool } from "@/lib/school";
 import { WA_ICON } from "@/components/whatsapp-send";
 import { Alert, Badge, Button, Field, ICONS, Icon, Input, Select, Skeleton, cx } from "@/components/ui";
 import { ROLES, api, type Role } from "@/lib/api";
@@ -74,6 +75,7 @@ export function SchoolDrawer({ id, onClose, onChanged }: { id: string; onClose: 
     try {
       await enterSchool(id);
       resetTenantStatus();
+      forgetSchool();
       router.push("/app/dashboard");
     } catch (err) {
       setMessage({ tone: "danger", text: errorMessage(err) });

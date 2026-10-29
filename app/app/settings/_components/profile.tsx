@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
+import { useRef, useState } from "react";
 import { fieldErrors } from "@/components/auth-shell";
 import { errorMessage, useResource } from "@/components/data";
+import { ImageCropper } from "@/components/image-cropper";
 import { Letterhead } from "@/components/letterhead";
 import { Alert, Button, Field, Input, Select, Skeleton } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
@@ -88,6 +90,16 @@ export function ProfileSettings() {
       }
     >
       {message && <Alert tone={message.tone}>{message.text}</Alert>}
+
+      <LogoUploader
+        school={s}
+        onChange={(school, text) => {
+          setCachedSchool(school);
+          loaded.setData(school);
+          setMessage(text ? { tone: "success", text } : null);
+        }}
+        onError={(text) => setMessage({ tone: "danger", text })}
+      />
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="sm:col-span-2">
@@ -175,9 +187,13 @@ export function ProfileSettings() {
             </Select>
           </Field>
           <div className="sm:col-span-2">
-            <Field label="Note printed on receipts" htmlFor="school-receiptNote" hint={`Optional, e.g. your refund policy. ${300 - v.receiptNote.length} characters left.`} error={errors.receiptNote}>
-              <Input {...text("receiptNote")} maxLength={300} placeholder="Fees once paid are not refundable." />
-            </Field>
+            <p className="text-sm text-muted">
+              Receipt look, numbering and the note at the bottom are in{" "}
+              <Link href="/app/settings/receipts" className="font-medium text-accent hover:underline">
+                Settings → Receipts
+              </Link>
+              .
+            </p>
           </div>
         </div>
       </div>
@@ -200,5 +216,97 @@ export function ProfileSettings() {
         </div>
       </div>
     </SettingsCard>
+  );
+}
+
+/** Picked files can be large photos; the cropped logo is a small 512×512 PNG. */
+const MAX_PICK_BYTES = 10 * 1024 * 1024;
+const LOGO_SIZE = 512;
+
+/** The school's logo: uploaded straight to Cloudinary with a signature from the server. */
+function LogoUploader({ school, onChange, onError }: { school: School; onChange: (s: School, message: string) => void; onError: (message: string) => void }) {
+  const input = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState<"upload" | "remove" | null>(null);
+  // Picked image waiting in the crop window
+  const [cropping, setCropping] = useState<File | null>(null);
+
+  function pick(file: File) {
+    if (input.current) input.current.value = "";
+    if (!/^image\/(png|jpe?g|webp)$/.test(file.type)) return onError("Choose a PNG, JPG or WebP image.");
+    if (file.size > MAX_PICK_BYTES) return onError("That image is over 10 MB. Choose a smaller one.");
+    setCropping(file);
+  }
+
+  async function upload(file: File) {
+    setCropping(null);
+    setBusy("upload");
+    try {
+      const { uploadUrl, fields } = await api<{ uploadUrl: string; fields: Record<string, string | number> }>("/api/school/logo/signature", { method: "POST" });
+      const form = new FormData();
+      for (const [k, v] of Object.entries(fields)) form.append(k, String(v));
+      form.append("file", file);
+      const res = await fetch(uploadUrl, { method: "POST", body: form });
+      const out = (await res.json().catch(() => null)) as { secure_url?: string; error?: { message: string } } | null;
+      if (!res.ok || !out?.secure_url) {
+        const reason = out?.error?.message ?? "";
+        // The platform's Cloudinary key can't upload: only EduFlow can fix that
+        throw new Error(/permission|forbidden/i.test(reason) ? "Logo upload is set up but not allowed yet on EduFlow's side. Ask EduFlow support (Console → Settings → Test connection)." : reason || "Upload failed. Try again.");
+      }
+      const { school: saved } = await api<{ school: School }>("/api/school/logo", { method: "PUT", body: { url: out.secure_url } });
+      onChange(saved, "Logo saved. It now appears on receipts and report cards.");
+    } catch (err) {
+      onError(err instanceof ApiError ? errorMessage(err) : (err as Error).message);
+    } finally {
+      setBusy(null);
+      if (input.current) input.current.value = "";
+    }
+  }
+
+  async function remove() {
+    if (!confirm("Remove the logo from receipts and report cards?")) return;
+    setBusy("remove");
+    try {
+      const { school: saved } = await api<{ school: School }>("/api/school/logo", { method: "DELETE" });
+      onChange(saved, "Logo removed.");
+    } catch (err) {
+      onError(errorMessage(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-4 rounded-xl border border-border bg-surface-muted/50 p-4">
+      <div className="grid size-20 shrink-0 place-items-center overflow-hidden rounded-xl border border-border bg-white">
+        {school.logoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={school.logoUrl} alt={`${school.name} logo`} className="size-full object-contain p-1" />
+        ) : (
+          <span className="text-2xl font-semibold text-zinc-400">{school.name.trim()[0]?.toUpperCase()}</span>
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold">Logo</p>
+        <p className="text-xs text-muted">
+          {school.logoUploads === false && !school.logoUrl
+            ? "Logo upload isn't switched on yet. Ask EduFlow support."
+            : `Shown on receipts and report cards. Pick a PNG, JPG or WebP; you crop it to a square and it's saved at ${LOGO_SIZE} × ${LOGO_SIZE} px.`}
+        </p>
+      </div>
+      {school.logoUploads !== false && (
+        <div className="flex gap-2">
+          <input ref={input} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => e.target.files?.[0] && pick(e.target.files[0])} />
+          <Button variant="secondary" size="sm" loading={busy === "upload"} disabled={busy !== null} onClick={() => input.current?.click()}>
+            {school.logoUrl ? "Change logo" : "Upload logo"}
+          </Button>
+          {cropping && <ImageCropper file={cropping} output={LOGO_SIZE} title="Crop your logo" onCancel={() => setCropping(null)} onDone={upload} />}
+          {school.logoUrl && (
+            <Button variant="ghost" size="sm" className="text-danger" loading={busy === "remove"} disabled={busy !== null} onClick={remove}>
+              Remove
+            </Button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

@@ -208,6 +208,7 @@ interface PreviewStudent {
   section: string;
   concession: Concession | null;
   assigned: boolean;
+  advance?: number;
 }
 
 /**
@@ -271,14 +272,14 @@ function AssignDrawer({ plan, onClose, onAssigned }: { plan: FeePlan; onClose: (
       const concessions = fresh
         .filter((st) => choices[st.id] && choices[st.id] !== "saved" && !(choices[st.id] === "none" && !st.concession))
         .map((st) => ({ studentId: st.id, concession: concessionFor(st) }));
-      const res = await api<{ students: number; created: number; skipped: number }>(`/api/fees/plans/${plan.id}/assign`, {
+      const res = await api<{ students: number; created: number; skipped: number; advanceApplied?: number; advanceStudents?: number }>(`/api/fees/plans/${plan.id}/assign`, {
         method: "POST",
         body: { grade, ...(section ? { section } : {}), concessions, remember },
       });
       onAssigned(
         res.created === 0
           ? `Everyone in Class ${className(grade, section)} already had “${plan.name}”. Nothing new to add.`
-          : `“${plan.name}” assigned to ${res.created / Math.max(1, plan.installments.length)} students${withConcession ? `, ${withConcession} with concessions` : ""}.${res.skipped ? ` ${res.skipped / Math.max(1, plan.installments.length)} already had it.` : ""}`
+          : `“${plan.name}” assigned to ${res.created / Math.max(1, plan.installments.length)} students${withConcession ? `, ${withConcession} with concessions` : ""}.${res.skipped ? ` ${res.skipped / Math.max(1, plan.installments.length)} already had it.` : ""}${res.advanceApplied ? ` ${formatMoney(res.advanceApplied)} already paid by ${res.advanceStudents} student${res.advanceStudents === 1 ? "" : "s"} was applied.` : ""}`
       );
     } catch (err) {
       setError(errorMessage(err));
@@ -378,6 +379,7 @@ function AssignDrawer({ plan, onClose, onAssigned }: { plan: FeePlan; onClose: (
                         {st.section && `${grade}-${st.section} · `}
                         {st.assigned ? "Already has this plan" : st.concession ? `Saved: ${st.concession.label}` : st.admissionNo}
                       </span>
+                      {!st.assigned && (st.advance ?? 0) > 0 && <span className="block text-xs font-medium text-success">{formatMoney(st.advance!)} already paid · used first</span>}
                     </span>
                     {!st.assigned && (
                       <>
