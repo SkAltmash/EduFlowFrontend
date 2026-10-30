@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import { CommandPalette, openPalette, type PaletteItem } from "@/components/command-palette";
 import { Drawer } from "@/components/data";
 import { PlanBanners, useTenantStatus } from "@/components/plan-banner";
+import { InstallAppButton, InstallCard } from "@/components/pwa";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge, Button, ICONS, Icon, Logo, Spinner, cx } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -373,6 +374,7 @@ export default function AppLayout({ children }: LayoutProps<"/app">) {
                 </Button>
               </div>
             )}
+            {pathname === "/app/dashboard" && <InstallCard className="mb-4" />}
             <PlanBanners canManage={session.role === "owner" || session.role === "admin"} />
             {children}
           </div>
@@ -476,6 +478,7 @@ export default function AppLayout({ children }: LayoutProps<"/app">) {
               <Icon d={ICONS.chevronRight} className="text-muted" />
             </Link>
           </nav>
+          <InstallAppButton className="rounded-xl border border-border bg-surface p-1.5" onDone={() => setMenuOpen(false)} />
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted">Theme</span>
             <ThemeToggle />
@@ -575,6 +578,7 @@ function UserMenu({ collapsed, initials, name, email, onSignOut }: { collapsed: 
             <Icon d={USER_ICON} className="text-muted" />
             My account
           </Link>
+          <InstallAppButton onDone={() => setOpen(false)} />
           <div className="flex items-center justify-between gap-2 px-2.5 py-1.5">
             <span className="text-sm">Theme</span>
             <ThemeToggle />
