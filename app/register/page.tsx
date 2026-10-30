@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AUTH_ICONS, AuthField, AuthInput, AuthShell, PasswordInput, PasswordStrength, fieldErrors } from "@/components/auth-shell";
 import { isStrongPassword } from "@/components/password-rules";
+import { PhoneOtp, VerifiedPhone, useAuthOptions, type OtpChallenge } from "@/components/phone-otp";
 import { Alert, Button } from "@/components/ui";
-import { ApiError } from "@/lib/api";
+import { ApiError, api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
 export default function RegisterPage() {
@@ -17,6 +18,10 @@ export default function RegisterPage() {
   const [error, setError] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [pending, setPending] = useState(false);
+  const options = useAuthOptions();
+  // The mobile number, once its OTP checked out
+  const [verified, setVerified] = useState<{ phone: string; token: string } | null>(null);
+  const phoneRequired = Boolean(options?.phoneRequiredOnRegister);
 
   useEffect(() => {
     if (session.status === "authenticated") router.replace(session.isSuperAdmin ? "/console" : "/app/dashboard");
@@ -35,6 +40,7 @@ export default function RegisterPage() {
     if (!isStrongPassword(form.password)) local.password = "Password doesn't meet the requirements";
     const org = form.tenantName.trim();
     if (org && org.length < 2) local.tenantName = "Organisation name must be at least 2 characters";
+    if (phoneRequired && !verified) local.phone = "Verify your mobile number with the OTP";
     setErrors(local);
     if (Object.keys(local).length) return;
 
@@ -45,10 +51,15 @@ export default function RegisterPage() {
         email: form.email.trim(),
         password: form.password,
         ...(org ? { tenantName: org } : {}),
+        ...(verified ? { phoneToken: verified.token } : {}),
       });
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.code === "EMAIL_TAKEN") setErrors({ email: err.message });
+        else if (err.code === "PHONE_TOKEN_EXPIRED" || err.code === "PHONE_TAKEN" || err.code === "PHONE_REQUIRED") {
+          setVerified(null);
+          setErrors({ phone: err.message });
+        }
         else if (err.details?.length) setErrors(fieldErrors(err.details));
         else setError(err.message);
       } else {
@@ -99,6 +110,30 @@ export default function RegisterPage() {
         <AuthField label="Your name" htmlFor="name" error={errors.name}>
           <AuthInput id="name" icon={AUTH_ICONS.user} autoComplete="name" value={form.name} onChange={set("name")} aria-invalid={Boolean(errors.name)} placeholder="Alice Khan" />
         </AuthField>
+        {options?.phoneLogin && (
+          <AuthField
+            label="Mobile number"
+            htmlFor="phone"
+            error={errors.phone}
+            extra={!phoneRequired ? <span className="text-xs text-muted">Optional</span> : undefined}
+            hint={verified ? undefined : "We'll text you a code to confirm it. You can also sign in with it later."}
+          >
+            {verified ? (
+              <VerifiedPhone phone={verified.phone} onChange={() => setVerified(null)} />
+            ) : (
+              <PhoneOtp
+                variant="auth"
+                submitLabel="Verify number"
+                send={(phone) => api<OtpChallenge>("/api/auth/otp/send", { method: "POST", body: { phone, purpose: "register" }, noRetry: true })}
+                verify={async (challengeId, code) => {
+                  const r = await api<{ phoneToken: string; phone: string }>("/api/auth/otp/verify", { method: "POST", body: { challengeId, code, purpose: "register" }, noRetry: true });
+                  setVerified({ phone: r.phone, token: r.phoneToken });
+                  setErrors((e) => ({ ...e, phone: "" }));
+                }}
+              />
+            )}
+          </AuthField>
+        )}
         <AuthField label="Work email" htmlFor="email" error={errors.email}>
           <AuthInput
             id="email"

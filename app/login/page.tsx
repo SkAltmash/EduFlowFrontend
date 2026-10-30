@@ -4,13 +4,16 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AUTH_ICONS, AuthField, AuthInput, AuthShell, PasswordInput, fieldErrors } from "@/components/auth-shell";
-import { Alert, Badge, Button, Spinner } from "@/components/ui";
-import { ApiError, type TenantChoice } from "@/lib/api";
+import { PhoneOtp, useAuthOptions, type OtpChallenge } from "@/components/phone-otp";
+import { Alert, Badge, Button, Spinner, cx } from "@/components/ui";
+import { ApiError, api, type LoginResult, type TenantChoice } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { session, login, selectTenant, completeTwoFactor } = useAuth();
+  const { session, login, loginWithOtp, selectTenant, completeTwoFactor } = useAuth();
+  const options = useAuthOptions();
+  const [mode, setMode] = useState<"email" | "phone">("email");
   // Super admins with two-step login: the 6-digit code from their authenticator app
   const [twoFactorToken, setTwoFactorToken] = useState<string | null>(null);
   const [code, setCode] = useState("");
@@ -43,17 +46,18 @@ export default function LoginPage() {
     setError(null);
     setErrors({});
     try {
-      const result = await login(email, password);
-      if (result.requiresTenantSelection) {
-        setChoice({ tenants: result.tenants, token: result.selectionToken });
-      } else if (result.requiresTwoFactor) {
-        setTwoFactorToken(result.twoFactorToken);
-      }
+      afterLogin(await login(email, password));
     } catch (err) {
       showError(err);
     } finally {
       setPending(false);
     }
+  }
+
+  /** Signed in, or one more step: pick a school / authenticator code. */
+  function afterLogin(result: LoginResult) {
+    if (result.requiresTenantSelection) setChoice({ tenants: result.tenants, token: result.selectionToken });
+    else if (result.requiresTwoFactor) setTwoFactorToken(result.twoFactorToken);
   }
 
   async function onSelect(tenantId: string) {
@@ -180,6 +184,42 @@ export default function LoginPage() {
         </>
       }
     >
+      {options?.phoneLogin && (
+        <div className="mb-5 grid grid-cols-2 rounded-xl border border-border bg-surface-muted p-1 text-sm" role="tablist" aria-label="Sign in with">
+          {(
+            [
+              ["email", "Email & password"],
+              ["phone", "Mobile OTP"],
+            ] as const
+          ).map(([m, label]) => (
+            <button
+              key={m}
+              role="tab"
+              aria-selected={mode === m}
+              onClick={() => {
+                setMode(m);
+                setError(null);
+                setErrors({});
+              }}
+              className={cx("rounded-lg py-2 font-medium transition-colors", mode === m ? "bg-background text-foreground shadow-sm" : "text-muted hover:text-foreground")}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+      {mode === "phone" && options?.phoneLogin ? (
+        <div className="space-y-4">
+          <p className="text-sm text-muted">We&apos;ll text a one-time code to the mobile number on your account.</p>
+          <PhoneOtp
+            variant="auth"
+            autoFocus
+            submitLabel="Sign in"
+            send={(phone) => api<OtpChallenge>("/api/auth/otp/send", { method: "POST", body: { phone, purpose: "login" }, noRetry: true })}
+            verify={async (challengeId, code) => afterLogin(await loginWithOtp(challengeId, code))}
+          />
+        </div>
+      ) : (
       <form onSubmit={onSubmit} className="space-y-5" noValidate>
         {error && <Alert>{error}</Alert>}
         <AuthField label="Email" htmlFor="email" error={errors.email}>
@@ -218,6 +258,7 @@ export default function LoginPage() {
           )}
         </Button>
       </form>
+      )}
     </AuthShell>
   );
 }

@@ -368,7 +368,7 @@ export default function AppLayout({ children }: LayoutProps<"/app">) {
                   <strong>Super admin view.</strong> You&apos;re inside {session.tenant.name} as its owner; everything you do is logged.
                 </span>
                 {/* The console switches back to the super admin session when it opens */}
-                <Button size="sm" variant="secondary" onClick={() => router.push("/console?tab=schools")}>
+                <Button size="sm" variant="secondary" onClick={() => router.push("/console/schools")}>
                   Back to console
                 </Button>
               </div>

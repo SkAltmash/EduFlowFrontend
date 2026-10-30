@@ -13,6 +13,8 @@ export interface User {
   id: string;
   name: string;
   email: string;
+  /** "+91XXXXXXXXXX", or "" when not added */
+  phone?: string;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;

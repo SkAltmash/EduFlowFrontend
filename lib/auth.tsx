@@ -22,12 +22,16 @@ interface RegisterInput {
   email: string;
   password: string;
   tenantName?: string;
+  /** From verifying the mobile number at sign-up */
+  phoneToken?: string;
 }
 
 interface AuthContextValue {
   session: Session;
   login(email: string, password: string): Promise<LoginResult>;
   completeTwoFactor(token: string, code: string): Promise<AuthResult>;
+  /** Sign in with the OTP texted to a mobile number */
+  loginWithOtp(challengeId: string, code: string): Promise<LoginResult>;
   selectTenant(tenantId: string, selectionToken: string): Promise<AuthResult>;
   register(input: RegisterInput): Promise<AuthResult>;
   logout(): Promise<void>;
@@ -88,6 +92,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [accept]
   );
 
+  const loginWithOtp = useCallback(
+    async (challengeId: string, code: string) => {
+      const result = await api<LoginResult>("/api/auth/otp/verify", { method: "POST", body: { challengeId, code, purpose: "login" }, noRetry: true });
+      if (!result.requiresTenantSelection && !result.requiresTwoFactor) accept(result);
+      return result;
+    },
+    [accept]
+  );
+
   const completeTwoFactor = useCallback(
     async (token: string, code: string) => accept(await api<AuthResult>("/api/auth/two-factor", { method: "POST", body: { token, code }, noRetry: true })),
     [accept]
@@ -142,8 +155,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ session, login, completeTwoFactor, selectTenant, register, logout, enterSchool, leaveSchool, updateSession }),
-    [session, login, completeTwoFactor, selectTenant, register, logout, enterSchool, leaveSchool, updateSession]
+    () => ({ session, login, loginWithOtp, completeTwoFactor, selectTenant, register, logout, enterSchool, leaveSchool, updateSession }),
+    [session, login, loginWithOtp, completeTwoFactor, selectTenant, register, logout, enterSchool, leaveSchool, updateSession]
   );
 
   return <AuthContext value={value}>{children}</AuthContext>;

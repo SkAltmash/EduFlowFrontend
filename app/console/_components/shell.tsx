@@ -2,23 +2,13 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { Drawer } from "@/components/data";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge, Button, ICONS, Icon, Logo, Spinner, buttonClass, cx } from "@/components/ui";
 import { api } from "@/lib/api";
 import { isEnteringSchool, useAuth } from "@/lib/auth";
-import { Admins } from "./admins";
-import { Announcements } from "./announcements";
-import { AuditLogs } from "./audit-logs";
-import { Dashboard } from "./dashboard";
-import { Plans } from "./plans";
 import { SchoolDrawer } from "./school-drawer";
-import { Schools } from "./schools";
-import { Security } from "./security";
-import { PlatformSettings } from "./settings";
-import { SystemHealth } from "./system";
-import { Users } from "./users";
 
 type Group = "Overview" | "Customers" | "Billing" | "Engage" | "Platform";
 
@@ -42,33 +32,51 @@ const PHONE_TABS: ConsoleTab[] = ["overview", "schools", "users", "plans"];
 const MORE_ICON = "M5 12h.01M12 12h.01M19 12h.01";
 const LOGOUT_ICON = "M15 4h3a2 2 0 012 2v12a2 2 0 01-2 2h-3M10 17l5-5-5-5M15 12H4";
 
-/** Console URL state: ?tab=schools&school=<id>. */
-export function useConsoleNav() {
+/** Each section's page. */
+export const pathFor = (tab: ConsoleTab) => (tab === "overview" ? "/console" : `/console/${tab}`);
+
+/** The section a path belongs to (/console/settings/sms-otp → settings). */
+function tabOf(pathname: string): ConsoleTab {
+  const seg = pathname.split("/")[2] ?? "";
+  return (TABS.find((t) => t.id === seg)?.id ?? "overview") as ConsoleTab;
+}
+
+interface ConsoleContextValue {
+  /** Opens a school's panel over the current page (?school=<id>) */
+  openSchool: (id: string) => void;
+  /** Goes up when a school was changed in its panel, so pages can reload */
+  version: number;
+}
+const ConsoleContext = createContext<ConsoleContextValue>({ openSchool: () => {}, version: 0 });
+export const useConsole = () => useContext(ConsoleContext);
+
+/** Console URL state: the page from the path, an open school from ?school=<id>. */
+function useConsoleNav() {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
-  const raw = params.get("tab");
-  const tab: ConsoleTab = TABS.some((t) => t.id === raw) ? (raw as ConsoleTab) : "overview";
+  const tab = tabOf(pathname);
   const school = params.get("school");
-  const go = useCallback(
-    (patch: { tab?: ConsoleTab; school?: string | null }) => {
+  const setSchool = useCallback(
+    (id: string | null, base = pathname) => {
       const next = new URLSearchParams(params.toString());
-      if (patch.tab) next.set("tab", patch.tab);
-      if (patch.school === null) next.delete("school");
-      else if (patch.school) next.set("school", patch.school);
-      if (next.get("tab") === "overview") next.delete("tab");
+      next.delete("tab");
+      if (id) next.set("school", id);
+      else next.delete("school");
       const qs = next.toString();
-      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+      const url = qs ? `${base}?${qs}` : base;
+      if (base === pathname) router.replace(url, { scroll: false });
+      else router.push(url);
     },
     [params, pathname, router]
   );
-  return { tab, school, go };
+  return { tab, school, setSchool, legacyTab: params.get("tab") };
 }
 
-export function ConsoleShell() {
+export function ConsoleShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { session, logout, leaveSchool } = useAuth();
-  const { tab, school, go } = useConsoleNav();
+  const { tab, school, setSchool, legacyTab } = useConsoleNav();
   const [moreOpen, setMoreOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   // Changes made in a school's drawer refresh the list and dashboard behind it
@@ -83,6 +91,13 @@ export function ConsoleShell() {
   useEffect(() => {
     if (session.status === "anonymous") router.replace("/login");
   }, [session.status, router]);
+
+  // Old links (/console?tab=schools&school=…) open the section's own page
+  useEffect(() => {
+    if (!legacyTab) return;
+    const t = TABS.find((x) => x.id === legacyTab);
+    router.replace(`${pathFor(t?.id ?? "overview")}${school ? `?school=${school}` : ""}`);
+  }, [legacyTab, school, router]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -126,7 +141,7 @@ export function ConsoleShell() {
   }
 
   const current = TABS.find((t) => t.id === tab)!;
-  const openSchool = (id: string) => go({ school: id });
+  const openSchool = (id: string) => setSchool(id);
   const more = TABS.filter((t) => !PHONE_TABS.includes(t.id));
 
   return (
@@ -158,9 +173,9 @@ export function ConsoleShell() {
             ...TABS.filter((t) => t.group === group).map((t) => {
               const active = t.id === tab;
               return (
-                <button
+                <Link
                   key={t.id}
-                  onClick={() => go({ tab: t.id, school: null })}
+                  href={pathFor(t.id)}
                   aria-current={active ? "page" : undefined}
                   className={cx(
                     "relative flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition-colors",
@@ -170,7 +185,7 @@ export function ConsoleShell() {
                   {active && <span aria-hidden className="absolute inset-y-1.5 -left-3 w-1 rounded-r-full bg-accent" />}
                   <Icon d={t.icon} />
                   {t.label}
-                </button>
+                </Link>
               );
             }),
           ])}
@@ -213,16 +228,7 @@ export function ConsoleShell() {
 
         <main className="app-canvas min-w-0 flex-1 px-4 pb-[calc(4rem+env(safe-area-inset-bottom)+1.5rem)] pt-6 sm:px-8 sm:pt-8 md:pb-10">
           <div className="mx-auto max-w-6xl">
-            {tab === "overview" && <Dashboard key={version} onOpenSchool={openSchool} onGo={(t) => go({ tab: t })} />}
-            {tab === "schools" && <Schools key={version} onOpenSchool={openSchool} />}
-            {tab === "users" && <Users onOpenSchool={openSchool} />}
-            {tab === "plans" && <Plans />}
-            {tab === "announcements" && <Announcements />}
-            {tab === "system" && <SystemHealth />}
-            {tab === "audit" && <AuditLogs />}
-            {tab === "security" && <Security />}
-            {tab === "admins" && <Admins />}
-            {tab === "settings" && <PlatformSettings />}
+            <ConsoleContext value={{ openSchool, version }}>{children}</ConsoleContext>
           </div>
         </main>
       </div>
@@ -235,12 +241,12 @@ export function ConsoleShell() {
             const active = id === tab;
             return (
               <li key={id}>
-                <button onClick={() => go({ tab: id, school: null })} aria-current={active ? "page" : undefined} className="flex h-full w-full flex-col items-center justify-center gap-1 text-[11px] active:scale-95">
+                <Link href={pathFor(id)} aria-current={active ? "page" : undefined} className="flex h-full w-full flex-col items-center justify-center gap-1 text-[11px] active:scale-95">
                   <span className={cx("grid h-7 w-14 place-items-center rounded-full transition-colors", active ? "bg-accent-soft text-accent" : "text-muted")}>
                     <Icon d={t.icon} className="size-5" />
                   </span>
                   <span className={cx("leading-none", active ? "font-semibold text-foreground" : "text-muted")}>{t.label === "Dashboard" ? "Home" : t.label}</span>
-                </button>
+                </Link>
               </li>
             );
           })}
@@ -259,17 +265,15 @@ export function ConsoleShell() {
         <Drawer side="bottom" title="More" onClose={() => setMoreOpen(false)}>
           <nav className="grid grid-cols-3 gap-2">
             {more.map((t) => (
-              <button
+              <Link
                 key={t.id}
-                onClick={() => {
-                  setMoreOpen(false);
-                  go({ tab: t.id, school: null });
-                }}
+                href={pathFor(t.id)}
+                onClick={() => setMoreOpen(false)}
                 className={cx("flex flex-col items-center gap-1.5 rounded-xl border py-3 text-xs font-medium", t.id === tab ? "border-accent bg-accent-soft text-accent" : "border-border bg-surface")}
               >
                 <Icon d={t.icon} className="size-5" />
                 {t.label}
-              </button>
+              </Link>
             ))}
           </nav>
           <div className="flex items-center gap-3">
@@ -295,16 +299,17 @@ export function ConsoleShell() {
           onClose={() => setSearchOpen(false)}
           onOpenSchool={(id) => {
             setSearchOpen(false);
-            go({ tab: tab === "overview" ? "schools" : tab, school: id });
+            // From the dashboard a school opens over the Schools list; elsewhere over the current page
+            setSchool(id, tab === "overview" ? "/console/schools" : undefined);
           }}
           onGo={(t) => {
             setSearchOpen(false);
-            go({ tab: t, school: null });
+            router.push(pathFor(t));
           }}
         />
       )}
 
-      {school && <SchoolDrawer id={school} onClose={() => go({ school: null })} onChanged={() => setVersion((v) => v + 1)} />}
+      {school && <SchoolDrawer id={school} onClose={() => setSchool(null)} onChanged={() => setVersion((v) => v + 1)} />}
     </div>
   );
 }
